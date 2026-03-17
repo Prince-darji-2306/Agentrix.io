@@ -1,6 +1,6 @@
 import json
 # from api import pages
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +8,7 @@ from convo import run_tool_agent
 from debater import run_debate_stream
 from orchestrator import run_orchestrator
 from schemas.schema import QueryRequest, TaskRequest
+from utils.pdf_processor import process_pdfs
 
 from dotenv import load_dotenv
 
@@ -102,6 +103,52 @@ async def debate_stream(topic: str, rounds: int = 3):
             yield f"data: {json.dumps(msg)}\n\n"
         yield "data: {\"type\": \"done\"}\n\n"
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+# ─── Route 4: PDF Upload & Processing ─────────────────────────────────────────
+@app.post("/upload-pdf")
+async def upload_pdfs(
+    files: list[UploadFile] = File(...),
+    user_id: str = "default_user"
+):
+    """
+    Accepts multiple PDF files, saves them temporarily,
+    processes them through pdf_processor, and stores extracted text in ChromaDB.
+    """
+    import tempfile
+    import shutil
+    import os
+    import asyncio
+
+    temp_dir = tempfile.mkdtemp()
+    file_paths = []
+
+    try:
+        # Save uploaded files to temporary directory
+        for file in files:
+            if not file.filename:
+                continue
+            temp_path = os.path.join(temp_dir, file.filename)
+            with open(temp_path, "wb") as buffer:
+                content = await file.read()
+                buffer.write(content)
+            file_paths.append(temp_path)
+
+        # Process PDFs in a thread to avoid blocking the event loop
+        # pdf_processor itself uses ThreadPoolExecutor for parallel processing
+        results = await asyncio.to_thread(process_pdfs, file_paths, user_id)
+
+        return {
+            "status": "success",
+            "processed": results.get("total_chunks", 0),
+            "details": results
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        # Clean up temporary files
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 # ─── Serve Frontend HTML Files ────────────────────────────────────────────────
 
