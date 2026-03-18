@@ -131,16 +131,71 @@ async def aggregator_node(state: OrchestratorState):
     return {"final_result": response.content, "subtasks": new_subtasks, "step_logs": logs}
 
 
+async def critic_node(state: OrchestratorState):
+    """Evaluates the aggregator's final output, assigns confidence and logical consistency scores."""
+    logs = list(state.get("step_logs", []))
+    final_result = state["final_result"]
+
+    llm = get_llm(temperature=0.1, change=True)
+    prompt = f"""You are a critical quality assurance agent. Evaluate the following research report for accuracy, completeness, and logical consistency.
+
+Report:
+{final_result}
+
+Task:
+{state['original_task']}
+
+Provide your assessment in the following EXACT format:
+
+CONFIDENCE: [0-100] - How confident are you that this report is accurate and well-researched?
+CONSISTENCY: [0-100] - How logically sound is the reasoning and structure?
+FEEDBACK: [Brief note on any issues or strengths]
+
+Do not include any other text. Just those three lines."""
+
+    response = await llm.ainvoke([HumanMessage(content=prompt)])
+    logs.append("🔬 Critic agent evaluated output quality")
+
+    # Parse response to extract scores
+    critique = response.content.strip()
+    confidence = 85  # defaults
+    consistency = 85
+    feedback = ""
+
+    try:
+        for line in critique.split("\n"):
+            line = line.strip()
+            if line.startswith("CONFIDENCE:"):
+                confidence = int(line.split(":")[1].strip().split()[0])
+            elif line.startswith("CONSISTENCY:"):
+                consistency = int(line.split(":")[1].strip().split()[0])
+            elif line.startswith("FEEDBACK:"):
+                feedback = line.split(":", 1)[1].strip()
+    except Exception as e:
+        logs.append(f"⚠️ Critic parsing error: {e}")
+        confidence = 80
+        consistency = 80
+
+    return {
+        "critic_confidence": confidence,
+        "critic_logical_consistency": consistency,
+        "critic_feedback": feedback,
+        "step_logs": logs,
+    }
+
+
 def _build_orchestrator_graph_parallel():
     graph = StateGraph(OrchestratorState)
     graph.add_node("orchestrator", orchestrator_node_parallel)
     graph.add_node("parallel_researchers", parallel_researchers_node)
     graph.add_node("aggregator", aggregator_node)
+    graph.add_node("critic", critic_node)
 
     graph.set_entry_point("orchestrator")
     graph.add_edge("orchestrator", "parallel_researchers")
     graph.add_edge("parallel_researchers", "aggregator")
-    graph.add_edge("aggregator", END)
+    graph.add_edge("aggregator", "critic")
+    graph.add_edge("critic", END)
 
     return graph.compile()
 
@@ -155,6 +210,9 @@ async def run_orchestrator(task: str) -> dict:
             "current_subtask_index": 0,
             "final_result": "",
             "step_logs": [],
+            "critic_confidence": 0,
+            "critic_logical_consistency": 0,
+            "critic_feedback": "",
         }
         result = await _graph_parallel.ainvoke(initial_state)
 
@@ -170,6 +228,9 @@ async def run_orchestrator(task: str) -> dict:
                 for st in result["subtasks"]
             ],
             "step_logs": result.get("step_logs", []),
+            "critic_confidence": result.get("critic_confidence", 85),
+            "critic_logical_consistency": result.get("critic_logical_consistency", 85),
+            "critic_feedback": result.get("critic_feedback", ""),
         }
 
     except Exception as e:

@@ -21,7 +21,7 @@ def knowledge_retriever(query: str) -> str:
     try:
         collection = get_collection()
         results = collection.query(query_texts=[query], n_results=3)
-        docs = results.get("documents", [[]])[0]
+        docs = results.get("documents")[0]
         if docs:
             return "Retrieved knowledge:\n" + "\n".join(f"- {d}" for d in docs)
         return "No relevant knowledge found in database."

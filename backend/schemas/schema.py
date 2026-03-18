@@ -23,3 +23,6 @@ class OrchestratorState(TypedDict):
     current_subtask_index: int
     final_result: str
     step_logs: List[str]
+    critic_confidence: int
+    critic_logical_consistency: int
+    critic_feedback: str
