@@ -22,6 +22,7 @@ async def run_debate_stream(topic: str, rounds: int = 3) -> AsyncGenerator[dict,
     history_a = []  # Agent A's conversation history
     history_b = []  # Agent B's conversation history
     
+    #this will work.
     # Opening statement setup
     opening_prompt_a = f"""The debate topic is: "{topic}"
         If user has given you any specific side than take it. Else you are arguing FOR this position. Give your opening statement."""
