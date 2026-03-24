@@ -26,3 +26,15 @@ class OrchestratorState(TypedDict):
     critic_confidence: int
     critic_logical_consistency: int
     critic_feedback: str
+
+class CodeModeState(TypedDict):
+    original_task: str
+    plan: str
+    code_results: List[dict]  # [{agent_id, code}]
+    final_code: str
+    review_feedback: str
+    confidence_score: int
+    consistency_score: int
+    step_logs: List[str]
+    graph_nodes: List[dict]
+    graph_edges: List[dict]
