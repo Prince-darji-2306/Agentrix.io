@@ -1,7 +1,7 @@
 import operator
 from pydantic import BaseModel
 from langchain_core.messages import BaseMessage
-from typing import TypedDict, Annotated, Sequence, List
+from typing import TypedDict, Annotated, Sequence, List, Optional, Callable
 
 
 class QueryRequest(BaseModel):
@@ -38,3 +38,29 @@ class CodeModeState(TypedDict):
     step_logs: List[str]
     graph_nodes: List[dict]
     graph_edges: List[dict]
+
+
+class SmartOrchestratorRequest(BaseModel):
+    task: str
+
+
+class CodingSubtask(TypedDict):
+    id: int
+    description: str
+    signatures: List[str]
+    result: Optional[str]
+
+
+class CodingAgentState(TypedDict):
+    original_task: str
+    subtasks: List[CodingSubtask]
+    shared_contract: str
+    coder_results: List[str]
+    merged_code: str
+    review_errors: List[str]
+    retry_count: int
+    confidence_score: int
+    logical_consistency: int
+    critic_feedback: str
+    final_output: str
+    step_logs: List[str]

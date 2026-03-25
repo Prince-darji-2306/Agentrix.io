@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { ChatMessage as ChatMessageType } from "@/lib/store";
 import ConfidenceBar from "./ConfidenceBar";
-import { ChevronDown, ChevronUp, Wrench, RotateCcw, Layers, CheckCircle2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Wrench, RotateCcw, Layers, CheckCircle2, Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatMessageProps {
@@ -19,6 +19,55 @@ const MODE_LABELS: Record<string, { short: string; color: string }> = {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+// Code block with copy button
+function CodeBlock({ children, className }: { children: React.ReactNode; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  const codeRef = React.useRef<HTMLDivElement>(null);
+
+  const handleCopy = useCallback(() => {
+    if (codeRef.current) {
+      const text = codeRef.current.textContent || "";
+      navigator.clipboard.writeText(text).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    }
+  }, []);
+
+  return (
+    <div className="relative group my-1">
+      <div className="flex items-center justify-between bg-secondary/80 border border-border px-3 py-1.5">
+        <span className="text-[8px] font-mono tracking-widest text-muted-foreground/60 uppercase">Code</span>
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1 text-[9px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3 h-3 text-chart-2" />
+              <span className="text-chart-2">Copied</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3 h-3" />
+              <span>Copy</span>
+            </>
+          )}
+        </button>
+      </div>
+      <div
+        ref={codeRef}
+        className={cn(
+          "bg-secondary border border-t-0 border-border p-2 text-[10px] text-chart-1 font-mono overflow-auto whitespace-pre-wrap",
+          className
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // Make the text match the old style but parsed robustly
 const MarkdownComponents: any = {
   h1: ({ node, ...props }: any) => <h1 className="text-sm font-mono font-bold text-foreground uppercase tracking-widest mt-2 mb-1" {...props} />,
@@ -28,10 +77,13 @@ const MarkdownComponents: any = {
   p: ({ node, ...props }: any) => <p className="leading-relaxed my-0.5" {...props} />,
   strong: ({ node, ...props }: any) => <strong className="font-semibold text-foreground" {...props} />,
   em: ({ node, ...props }: any) => <em className="italic text-muted-foreground" {...props} />,
-  code: ({ node, inline, ...props }: any) => 
-    inline 
-      ? <code className="bg-secondary border border-border px-1 py-0.5 text-[10px] text-chart-1 font-mono rounded-none" {...props} />
-      : <code className="block bg-secondary border border-border p-2 text-[10px] text-chart-1 font-mono overflow-auto whitespace-pre-wrap my-1" {...props} />,
+  code: ({ node, inline, className, children, ...props }: any) => {
+    if (inline) {
+      return <code className="bg-secondary border border-border px-1 py-0.5 text-[10px] text-chart-1 font-mono rounded-none" {...props}>{children}</code>;
+    }
+    // Block code - wrap in CodeBlock with copy button
+    return <CodeBlock className={className}>{children}</CodeBlock>;
+  },
   pre: ({ node, ...props }: any) => <pre className="m-0 p-0 bg-transparent" {...props} />,
   ul: ({ node, ...props }: any) => <ul className="list-none my-1 space-y-0.5" {...props} />,
   ol: ({ node, ...props }: any) => <ol className="list-decimal list-inside my-1 space-y-0.5 font-semibold text-muted-foreground" {...props} />,

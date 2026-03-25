@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useAppStore } from "@/lib/store";
 import { GraphNodePanel } from "../GraphNodeCard";
 import type { GraphNode } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { GitFork, Info } from "lucide-react";
 
-type NodeType = "orchestrator" | "agent" | "critic" | "output";
+type NodeType = "orchestrator" | "agent" | "critic" | "output" | "planner" | "coder" | "aggregator" | "reviewer";
 
 const TYPE_COLORS: Record<NodeType, { fillAlpha: string; strokeAlpha: string; colorVar: string; label: string; badge: string }> = {
   orchestrator: {
@@ -38,9 +38,37 @@ const TYPE_COLORS: Record<NodeType, { fillAlpha: string; strokeAlpha: string; co
     label: "Output",
     badge: "border-chart-4/40 text-chart-4 bg-chart-4/8",
   },
+  planner: {
+    fillAlpha: "0.10",
+    strokeAlpha: "0.45",
+    colorVar: "var(--chart-2)",
+    label: "Planner",
+    badge: "border-chart-2/40 text-chart-2 bg-chart-2/8",
+  },
+  coder: {
+    fillAlpha: "0.08",
+    strokeAlpha: "0.35",
+    colorVar: "var(--chart-3)",
+    label: "Coder",
+    badge: "border-chart-3/30 text-chart-3 bg-chart-3/5",
+  },
+  aggregator: {
+    fillAlpha: "0.10",
+    strokeAlpha: "0.45",
+    colorVar: "var(--chart-1)",
+    label: "Aggregator",
+    badge: "border-chart-1/40 text-chart-1 bg-chart-1/8",
+  },
+  reviewer: {
+    fillAlpha: "0.12",
+    strokeAlpha: "0.55",
+    colorVar: "var(--chart-5)",
+    label: "Reviewer",
+    badge: "border-chart-5/40 text-chart-5 bg-chart-5/8",
+  },
 };
 
-const LEGEND_TYPES: NodeType[] = ["orchestrator", "agent", "critic", "output"];
+const LEGEND_TYPES: NodeType[] = ["orchestrator", "agent", "critic", "output", "planner", "coder", "aggregator", "reviewer"];
 
 export default function TaskGraphPage() {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -123,10 +151,17 @@ export default function TaskGraphPage() {
                 const colors = TYPE_COLORS[type];
                 const colorVar = colors.colorVar;
 
-                const statusColor =
-                  node.status === "completed" ? "var(--chart-2)"
-                  : node.status === "running"  ? "var(--chart-3)"
-                  : "var(--muted)";
+                const getStatusColor = () => {
+                  if (node.status === "completed") return "var(--chart-2)";
+                  if (node.status === "running") return "var(--chart-3)";
+                  return "var(--muted)";
+                };
+                const statusColor = getStatusColor();
+
+                const fillPercentage = colors.fillAlpha === "0.12" ? "12%" : "8%";
+                const nodeFill = isSelected 
+                  ? `color-mix(in oklch, ${colorVar} ${fillPercentage}, transparent)`
+                  : "var(--svg-node-default-fill)";
 
                 return (
                   <g
@@ -138,7 +173,7 @@ export default function TaskGraphPage() {
                     {/* Node background */}
                     <rect
                       width="140" height="50" rx="0"
-                      fill={isSelected ? `color-mix(in oklch, ${colorVar} ${colors.fillAlpha === "0.12" ? "12%" : "8%"}, transparent)` : "var(--svg-node-default-fill)"}
+                      fill={nodeFill}
                       stroke={isSelected ? colorVar : "var(--svg-node-default-stroke)"}
                       strokeWidth={isSelected ? "1.5" : "1"}
                     />

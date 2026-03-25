@@ -66,6 +66,37 @@ export interface ChatResult {
   }; // only present when orchestrator was used
 }
 
+// ─── Smart Orchestrator (SSE) ────────────────────────────────────────────────
+
+export type SmartOrchestratorPath = "standard" | "deep_research" | "code";
+
+export interface SmartSSEEvent {
+  type: "route" | "stage" | "node_update" | "chunk" | "plan" | "code_section" | "final" | "done" | "error";
+  path?: SmartOrchestratorPath;
+  reason?: string;
+  stage?: string;
+  message?: string;
+  node_id?: string;
+  status?: "running" | "completed" | "error";
+  label?: string;
+  node_type?: string;
+  x?: number;
+  y?: number;
+  output?: string | null;
+  content?: string;
+  subtasks?: Array<{ id: number; description: string; agent_type?: string; signatures?: string[] }>;
+  section?: "problem_understanding" | "approach" | "code";
+  result?: string;
+  meta?: {
+    confidence_score: number;
+    logical_consistency: number;
+    critic_feedback: string;
+    retry_count: number;
+    tools_used: string[];
+    orchestrator_raw?: OrchestratorApiResponse;
+  };
+}
+
 // ─── Standard Chat ────────────────────────────────────────────────────────────
 
 // Non-streaming chat call - matches backend /chat JSON response
@@ -94,45 +125,6 @@ export async function callChatApiNonStreaming(query: string): Promise<ChatResult
     },
   };
 }
-
-// // DEPRECATED: Streaming version - kept for reference but not used with current backend
-// export async function* streamChatApi(query: string): AsyncGenerator<ChatStreamEvent> {
-//   const res = await fetch(`${API_BASE}/chat`, {
-//     method: "POST",
-//     headers: { "Content-Type": "application/json" },
-//     body: JSON.stringify({ query }),
-//   });
-
-//   if (!res.ok || !res.body) {
-//     const error = await res.text();
-//     throw new Error(`Chat API error: ${res.status} - ${error}`);
-//   }
-
-//   const reader = res.body.getReader();
-//   const decoder = new TextDecoder();
-//   let buffer = "";
-
-//   while (true) {
-//     const { done, value } = await reader.read();
-//     if (done) break;
-
-//     buffer += decoder.decode(value, { stream: true });
-//     const lines = buffer.split("\n");
-//     buffer = lines.pop() ?? "";
-
-//     for (const line of lines) {
-//       if (!line.startsWith("data: ")) continue;
-//       const jsonStr = line.slice(6).trim();
-//       if (!jsonStr) continue;
-//       try {
-//         const msg: ChatStreamEvent = JSON.parse(jsonStr);
-//         yield msg;
-//       } catch {
-//         // skip malformed lines
-//       }
-//     }
-//   }
-// }
 
 export async function callChatApi(query: string): Promise<ChatResult> {
   // Use non-streaming version to match backend
@@ -227,6 +219,48 @@ export async function* streamDebate(
   }
 }
 
+// ─── Smart Orchestrator Stream ───────────────────────────────────────────────
+
+export async function* callSmartOrchestratorStream(task: string): AsyncGenerator<SmartSSEEvent> {
+  const res = await fetch(`${API_BASE}/smart-orchestrator/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ task }),
+  });
+
+  if (!res.ok || !res.body) {
+    const error = await res.text();
+    throw new Error(`Smart Orchestrator error: ${res.status} - ${error}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+        try {
+          const msg: SmartSSEEvent = JSON.parse(jsonStr);
+          yield msg;
+          if (msg.type === "done") return;
+        } catch {
+          // skip malformed lines
+        }
+      }
+    }
+  }
+}
+
 // ─── Unified entry-point for ChatPage ────────────────────────────────────────
 
 export async function uploadPdfs(files: File[], userId: string = "default_user"): Promise<any> {
@@ -250,7 +284,9 @@ export async function uploadPdfs(files: File[], userId: string = "default_user")
 export async function generateResponse(
   prompt: string,
   mode: ChatMode,
-  onIndicator: (indicator: string) => void
+  onIndicator: (indicator: string) => void,
+  onNodeUpdate?: (event: SmartSSEEvent) => void,
+  onContentChunk?: (section: string, content: string) => void,
 ): Promise<ChatResult> {
   if (mode === "standard") {
     onIndicator("Analyzing input…");
@@ -259,24 +295,124 @@ export async function generateResponse(
     return result;
   }
 
-  // multi-agent or deep-research → orchestrator
-  const indicators =
-    mode === "multi-agent"
-      ? [
-          "Orchestrator activated…",
-          "Spawning specialized agents…",
-          "Planner agent reasoning…",
-          "Executor agent processing…",
-          "Aggregating results…",
-        ]
-      : [
-          "Decomposing task…",
-          "Identifying research vectors…",
-          "Researching sources…",
-          "Executing tools…",
-          "Synthesizing findings…",
-          "Verifying facts…",
-        ];
+  // multi-agent → smart orchestrator with SSE streaming
+  if (mode === "multi-agent") {
+    onIndicator("Smart Router activated…");
+    let finalResult = "";
+    let finalMeta: ChatResult["meta"] = {
+      confidenceScore: 85,
+      reasoningDepth: 0,
+      retryCount: 0,
+      toolsUsed: [],
+    };
+    let orchestratorRaw: OrchestratorApiResponse | undefined;
+    let detectedPath: string | null = null;
+    let codeContent = "";
+
+    // Deep research thinking indicators
+    const deepResearchIndicators = [
+      "Decomposing task…",
+      "Identifying research vectors…",
+      "Researching sources…",
+      "Executing tools…",
+      "Synthesizing findings…",
+      "Verifying facts…",
+    ];
+    let indicatorIdx = 0;
+    let indicatorInterval: ReturnType<typeof setInterval> | null = null;
+
+    try {
+      for await (const event of callSmartOrchestratorStream(prompt)) {
+        switch (event.type) {
+          case "route":
+            detectedPath = event.path || null;
+            if (onNodeUpdate) onNodeUpdate(event);
+
+            // For deep_research, start cycling through thinking indicators
+            if (detectedPath === "deep_research") {
+              onIndicator(deepResearchIndicators[0]);
+              indicatorInterval = setInterval(() => {
+                indicatorIdx++;
+                if (indicatorIdx < deepResearchIndicators.length) {
+                  onIndicator(deepResearchIndicators[indicatorIdx]);
+                }
+              }, 2000);
+            } else {
+              onIndicator(`Routed to: ${event.path} (${event.reason})`);
+            }
+            break;
+          case "stage":
+            // For deep_research, ignore stage events (we show our own indicators)
+            if (detectedPath !== "deep_research") {
+              onIndicator(event.message || "");
+            }
+            break;
+          case "node_update":
+            if (onNodeUpdate) onNodeUpdate(event);
+            break;
+          case "plan":
+            onIndicator("Plan created with subtasks");
+            // Show approach/plan content in the chat bubble
+            if (onContentChunk && event.subtasks) {
+              const approachLines = event.subtasks.map(
+                (st, i) => `- **Coding Agent ${st.id}**: ${st.description}`
+              ).join("\n");
+              onContentChunk("approach", `The task was decomposed into ${event.subtasks.length} parallel subtasks assigned to specialized coding agents:\n\n${approachLines}\n\nAll agents respect a shared contract of function signatures to ensure interoperability.`);
+            }
+            break;
+          case "code_section":
+            if (onContentChunk && event.section && event.content) {
+              if (event.section === "code") {
+                // Final code section - replace accumulated content
+                codeContent = event.content;
+                onContentChunk("code", event.content);
+              } else {
+                // Problem understanding or approach - accumulate
+                onContentChunk(event.section, event.content);
+              }
+            }
+            break;
+          case "final":
+            finalResult = event.result || "";
+            if (event.meta) {
+              finalMeta = {
+                confidenceScore: event.meta.confidence_score,
+                reasoningDepth: event.meta.tools_used?.length || 0,
+                retryCount: event.meta.retry_count,
+                toolsUsed: event.meta.tools_used || [],
+                logicalConsistency: event.meta.logical_consistency,
+                criticFeedback: event.meta.critic_feedback,
+              };
+              if (event.meta.orchestrator_raw) {
+                orchestratorRaw = event.meta.orchestrator_raw;
+              }
+            }
+            break;
+          case "error":
+            throw new Error(event.message || "Unknown error");
+        }
+      }
+    } finally {
+      if (indicatorInterval) clearInterval(indicatorInterval);
+      onIndicator("");
+    }
+
+    return {
+      content: finalResult,
+      meta: finalMeta,
+      orchestratorRaw,
+    };
+  }
+
+  // deep-research → orchestrator (non-streaming)
+  const indicators = [
+    "Decomposing task…",
+    "Identifying research vectors…",
+    "Researching sources…",
+    "Executing tools…",
+    "Synthesizing findings…",
+    "Verifying facts…",
+  ];
 
   let indicatorIdx = 0;
   const tickInterval = setInterval(() => {
@@ -287,8 +423,7 @@ export async function generateResponse(
 
   try {
     let result = await callOrchestratorApi(prompt, (log) => onIndicator(log));
-    // For deep-research mode, only show the final aggregator result (hide agent breakdown)
-    if (mode === "deep-research" && result.orchestratorRaw) {
+    if (result.orchestratorRaw) {
       result = {
         ...result,
         content: result.orchestratorRaw.final_result,

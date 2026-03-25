@@ -15,6 +15,10 @@ const TYPE_BADGE: Record<NodeType, string> = {
   agent:        "border-chart-1/30 text-chart-1",
   critic:       "border-chart-5/40 text-chart-5",
   output:       "border-chart-4/40 text-chart-4",
+  planner:      "border-chart-2/40 text-chart-2",
+  coder:        "border-chart-3/30 text-chart-3",
+  aggregator:   "border-chart-1/40 text-chart-1",
+  reviewer:     "border-chart-5/40 text-chart-5",
 };
 
 interface GraphNodePanelProps {
@@ -22,7 +26,7 @@ interface GraphNodePanelProps {
   onClose: () => void;
 }
 
-export function GraphNodePanel({ node, onClose }: GraphNodePanelProps) {
+export function GraphNodePanel({ node, onClose }: Readonly<GraphNodePanelProps>) {
   const badgeClass = TYPE_BADGE[node.type];
 
   return (

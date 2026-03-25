@@ -2,13 +2,13 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useAppStore } from "@/lib/store";
-import { generateResponse, callChatApi, callOrchestratorApi } from "@/lib/api";
+import { generateResponse, callChatApi, type SmartSSEEvent } from "@/lib/api";
 import ChatMessageComp from "../ChatMessage";
 import ToolSelector from "../ToolSelector";
 import { Send, Square, Terminal, AlertCircle, X, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { nanoid } from "@/lib/nanoid";
-import type { GraphNode, GraphEdge } from "@/lib/store";
+import type { GraphNode, GraphEdge, GraphNodeType } from "@/lib/store";
 
 const SUGGESTIONS = [
   "Explain multi-agent reasoning architectures",
@@ -16,12 +16,23 @@ const SUGGESTIONS = [
   "How does deep research mode differ from standard?",
 ];
 
+const CODE_MODE_EDGES: GraphEdge[] = [
+  { id: "e-router-planner", from: "router", to: "code_planner" },
+  { id: "e-planner-coder1", from: "code_planner", to: "coder_1" },
+  { id: "e-planner-coder2", from: "code_planner", to: "coder_2" },
+  { id: "e-planner-coder3", from: "code_planner", to: "coder_3" },
+  { id: "e-coder1-aggregator", from: "coder_1", to: "code_aggregator" },
+  { id: "e-coder2-aggregator", from: "coder_2", to: "code_aggregator" },
+  { id: "e-coder3-aggregator", from: "coder_3", to: "code_aggregator" },
+  { id: "e-aggregator-reviewer", from: "code_aggregator", to: "code_reviewer" },
+  { id: "e-reviewer-output", from: "code_reviewer", to: "output" },
+];
+
 export default function ChatPage() {
   const {
     chatMessages,
     addChatMessage,
     updateChatMessage,
-    clearChatMessages,
     selectedMode,
     isGenerating,
     setIsGenerating,
@@ -29,6 +40,7 @@ export default function ChatPage() {
     setCurrentIndicator,
     setGraphNodes,
     setGraphEdges,
+    upsertGraphNode,
     createChat,
     clearGraphData,
   } = useAppStore();
@@ -218,8 +230,86 @@ export default function ChatPage() {
             meta: result.meta,
             processingIndicator: undefined,
           });
+        } else if (selectedMode === "multi-agent") {
+          // Smart Orchestrator with SSE streaming
+          setGraphNodes([]);
+          setGraphEdges([]);
+          let codePhase = "";
+          let problemContent = "";
+          let approachContent = "";
+          let codeContent = "";
+
+          const result = await generateResponse(
+            query,
+            selectedMode,
+            (indicator) => updateChatMessage(assistantId, { processingIndicator: indicator }),
+            // onNodeUpdate
+            (event: SmartSSEEvent) => {
+              if (event.type === "route" && event.path === "code") {
+                setGraphEdges(CODE_MODE_EDGES);
+              }
+              if (event.type === "route" && event.path === "deep_research") {
+                // Deep research edges will be built from orchestratorRaw after completion
+              }
+              if (event.node_id) {
+                upsertGraphNode({
+                  id: event.node_id,
+                  type: (event.node_type ?? "agent") as GraphNodeType,
+                  label: event.label ?? "",
+                  description: "",
+                  status: event.status ?? "running",
+                  x: event.x ?? 400,
+                  y: event.y ?? 300,
+                  output: event.output ?? undefined,
+                  timeTaken: "-",
+                });
+              }
+            },
+            // onContentChunk - handle code section streaming
+            (section: string, content: string) => {
+              if (section === "problem_understanding") {
+                codePhase = "problem";
+                problemContent = content;
+                updateChatMessage(assistantId, {
+                  content: `## Problem Understanding\n\n${problemContent}`,
+                });
+              } else if (section === "approach") {
+                codePhase = "approach";
+                approachContent = content;
+                updateChatMessage(assistantId, {
+                  content: `## Problem Understanding\n\n${problemContent}\n\n## Approach/Plan\n\n${approachContent}`,
+                });
+              } else if (section === "code") {
+                codePhase = "code";
+                codeContent = content;
+                // Replace entire content with final formatted output
+                const finalOutput = `## Problem Understanding\n\n${problemContent}\n\n## Approach/Plan\n\n${approachContent}\n\n## Code\n\n${codeContent}`;
+                updateChatMessage(assistantId, {
+                  content: finalOutput,
+                });
+              } else {
+                // Fallback: accumulate content
+                updateChatMessage(assistantId, {
+                  content: content,
+                });
+              }
+            }
+          );
+
+          // For deep_research path, build graph from orchestratorRaw
+          if (result.orchestratorRaw && result.orchestratorRaw.subtasks) {
+            const { nodes, edges } = buildGraphFromOrchestrator(query, result.orchestratorRaw);
+            setGraphNodes(nodes);
+            setGraphEdges(edges);
+          }
+
+          updateChatMessage(assistantId, {
+            content: result.content,
+            meta: result.meta,
+            processingIndicator: undefined,
+          });
         } else {
-          // For multi-agent/deep-research: clear graph data
+          // deep-research: use orchestrator (non-streaming)
           setGraphNodes([]);
           setGraphEdges([]);
 

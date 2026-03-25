@@ -11,9 +11,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from convo import run_tool_agent
 from debater import run_debate_stream
 from orchestrator import run_orchestrator
-from schemas.schema import QueryRequest, TaskRequest, CodeModeState
+from schemas.schema import QueryRequest, TaskRequest, CodeModeState, SmartOrchestratorRequest
 from utils.pdf_processor import process_pdfs
 
+from smart_orchestrator import smart_orchestrator_stream
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -40,6 +41,7 @@ async def root():
         "endpoints": {
             "chat": "/chat (POST)",
             "orchestrator": "/orchestrator/task (POST)",
+            "smart_orchestrator": "/smart-orchestrator/stream (POST)",
             "debate": "/debate/stream (GET)",
             "upload": "/upload-pdf (POST)",
             "docs": "/docs",
@@ -114,6 +116,20 @@ async def upload_pdfs(
     finally:
         # Clean up temporary files
         shutil.rmtree(temp_dir, ignore_errors=True)
+
+# ─── Route 5: Smart Orchestrator (SSE Stream) ─────────────────────────────────
+@app.post("/smart-orchestrator/stream")
+async def smart_orchestrator_endpoint(req: SmartOrchestratorRequest):
+    async def event_generator():
+        try:
+            async for chunk in smart_orchestrator_stream(req.task):
+                yield chunk
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        finally:
+            yield "data: {\"type\": \"done\"}\n\n"
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 # ─── Serve Frontend HTML Files ────────────────────────────────────────────────
 

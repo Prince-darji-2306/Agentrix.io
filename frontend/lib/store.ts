@@ -41,7 +41,7 @@ export interface DebateMessage {
   timestamp: Date;
 }
 
-export type GraphNodeType = "orchestrator" | "agent" | "critic" | "output";
+export type GraphNodeType = "orchestrator" | "agent" | "critic" | "output" | "planner" | "coder" | "aggregator" | "reviewer";
 
 export interface GraphNode {
   id: string;
@@ -85,6 +85,7 @@ interface AppState {
   graphEdges: GraphEdge[];
   setGraphEdges: (edges: GraphEdge[]) => void;
   clearGraphData: () => void;
+  upsertGraphNode: (node: GraphNode) => void;
   chatSessions: ChatSession[];
   currentChatId: string | null;
   createChat: () => void;
@@ -97,7 +98,7 @@ interface AppState {
 }
 
 const loadChatSessions = (): ChatSession[] => {
-  if (typeof window === "undefined") return [];
+  if (globalThis.window === undefined) return [];
   try {
     const saved = localStorage.getItem("agentrix_chat_history");
     if (saved) {
@@ -200,6 +201,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   graphEdges: [],
   setGraphEdges: (edges) => set({ graphEdges: edges }),
   clearGraphData: () => set({ graphNodes: [], graphEdges: [] }),
+  upsertGraphNode: (node) => set((s) => {
+    const idx = s.graphNodes.findIndex(n => n.id === node.id);
+    if (idx >= 0) {
+      const updated = [...s.graphNodes];
+      updated[idx] = { ...updated[idx], ...node };
+      return { graphNodes: updated };
+    }
+    return { graphNodes: [...s.graphNodes, node] };
+  }),
   chatSessions: loadChatSessions(),
   currentChatId: null,
   createChat: () => {
@@ -260,9 +270,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         localStorage.setItem("agentrix_chat_history", JSON.stringify(updated));
       } catch (e) {
         console.warn("Failed to update chat in localStorage:", e);
-      }
-      if (state.currentChatId === id && updates.messages) {
-        return { chatSessions: updated, chatMessages: updates.messages };
       }
       return { chatSessions: updated };
     });
