@@ -1,0 +1,220 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --font-jetbrains: 'JetBrains Mono';
+  --font-ibm: 'IBM Plex Mono';
+}
+
+/* =============================================
+   AMCAS — Retro Terminal Theme
+   Dark: phosphor amber/green on deep black CRT
+   Light: warm parchment + dark ink
+   ============================================= */
+
+:root {
+  /* Light mode — Claude-style warm cream */
+  --background: oklch(0.985 0.004 75);
+  --foreground: oklch(0.16 0.015 50);
+  --card: oklch(0.975 0.006 72);
+  --card-foreground: oklch(0.16 0.015 50);
+  --popover: oklch(0.975 0.006 72);
+  --popover-foreground: oklch(0.16 0.015 50);
+  --primary: oklch(0.48 0.13 52);
+  --primary-foreground: oklch(0.985 0.004 75);
+  --secondary: oklch(0.94 0.008 70);
+  --secondary-foreground: oklch(0.28 0.018 50);
+  --muted: oklch(0.94 0.008 70);
+  --muted-foreground: oklch(0.44 0.02 55);
+  --accent: oklch(0.48 0.13 52);
+  --accent-foreground: oklch(0.985 0.004 75);
+  --destructive: oklch(0.5 0.2 22);
+  --destructive-foreground: oklch(0.985 0.004 75);
+  --border: oklch(0.88 0.012 68);
+  --input: oklch(0.96 0.006 72);
+  --ring: oklch(0.48 0.13 52);
+  --chart-1: oklch(0.48 0.13 52);
+  --chart-2: oklch(0.5 0.14 155);
+  --chart-3: oklch(0.55 0.12 80);
+  --chart-4: oklch(0.52 0.15 35);
+  --chart-5: oklch(0.52 0.14 200);
+  --radius: 0.375rem;
+  --sidebar: oklch(0.965 0.008 70);
+  --sidebar-foreground: oklch(0.2 0.015 50);
+  --sidebar-primary: oklch(0.48 0.13 52);
+  --sidebar-primary-foreground: oklch(0.985 0.004 75);
+  --sidebar-accent: oklch(0.935 0.009 68);
+  --sidebar-accent-foreground: oklch(0.28 0.018 50);
+  --sidebar-border: oklch(0.87 0.012 66);
+  --sidebar-ring: oklch(0.48 0.13 52);
+  /* AMCAS retro tokens — light */
+  --phosphor: oklch(0.48 0.13 52);
+  --phosphor-dim: oklch(0.48 0.13 52 / 0.4);
+  --scanline: oklch(0.16 0.015 50 / 0.025);
+  --glow: oklch(0.48 0.13 52 / 0.1);
+  --terminal-border: oklch(0.88 0.012 68);
+  /* SVG / chart color exports for JS usage */
+  --svg-grid: oklch(0.82 0.01 65 / 0.5);
+  --svg-edge: oklch(0.78 0.012 65);
+  --svg-node-default-fill: oklch(0.96 0.006 72);
+  --svg-node-default-stroke: oklch(0.82 0.012 65);
+  --svg-text-primary: oklch(0.16 0.015 50);
+  --svg-text-muted: oklch(0.44 0.02 55);
+  --svg-tooltip-bg: oklch(0.975 0.006 72);
+  --svg-tooltip-border: oklch(0.88 0.012 68);
+  --svg-tooltip-text: oklch(0.16 0.015 50);
+  --svg-chart-line: oklch(0.48 0.13 52);
+  --svg-chart-grid: oklch(0.88 0.012 68);
+}
+
+.dark {
+  /* Dark mode — phosphor amber on CRT black */
+  --background: oklch(0.09 0.005 50);
+  --foreground: oklch(0.88 0.08 78);
+  --card: oklch(0.12 0.008 52);
+  --card-foreground: oklch(0.88 0.08 78);
+  --popover: oklch(0.12 0.008 52);
+  --popover-foreground: oklch(0.88 0.08 78);
+  --primary: oklch(0.78 0.16 82);
+  --primary-foreground: oklch(0.09 0.005 50);
+  --secondary: oklch(0.16 0.01 55);
+  --secondary-foreground: oklch(0.75 0.07 78);
+  --muted: oklch(0.16 0.01 55);
+  --muted-foreground: oklch(0.52 0.055 70);
+  --accent: oklch(0.78 0.16 82);
+  --accent-foreground: oklch(0.09 0.005 50);
+  --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(0.88 0.06 78);
+  --border: oklch(0.21 0.015 58);
+  --input: oklch(0.16 0.01 55);
+  --ring: oklch(0.78 0.16 82);
+  --chart-1: oklch(0.78 0.16 82);
+  --chart-2: oklch(0.72 0.16 155);
+  --chart-3: oklch(0.82 0.13 95);
+  --chart-4: oklch(0.75 0.18 45);
+  --chart-5: oklch(0.7 0.16 198);
+  --radius: 0.375rem;
+  --sidebar: oklch(0.11 0.007 52);
+  --sidebar-foreground: oklch(0.82 0.07 78);
+  --sidebar-primary: oklch(0.78 0.16 82);
+  --sidebar-primary-foreground: oklch(0.09 0.005 50);
+  --sidebar-accent: oklch(0.16 0.01 55);
+  --sidebar-accent-foreground: oklch(0.75 0.07 78);
+  --sidebar-border: oklch(0.19 0.012 55);
+  --sidebar-ring: oklch(0.78 0.16 82);
+  /* AMCAS retro tokens — dark */
+  --phosphor: oklch(0.78 0.16 82);
+  --phosphor-dim: oklch(0.78 0.16 82 / 0.4);
+  --scanline: oklch(0.95 0 0 / 0.025);
+  --glow: oklch(0.78 0.16 82 / 0.18);
+  --terminal-border: oklch(0.24 0.018 60);
+  /* SVG / chart color exports for JS usage */
+  --svg-grid: oklch(0.28 0.015 58 / 0.5);
+  --svg-edge: oklch(0.28 0.012 56);
+  --svg-node-default-fill: oklch(0.12 0.006 52);
+  --svg-node-default-stroke: oklch(0.22 0.012 56);
+  --svg-text-primary: oklch(0.78 0.06 75);
+  --svg-text-muted: oklch(0.44 0.028 62);
+  --svg-tooltip-bg: oklch(0.12 0.008 52);
+  --svg-tooltip-border: oklch(0.24 0.018 60);
+  --svg-tooltip-text: oklch(0.82 0.07 78);
+  --svg-chart-line: oklch(0.78 0.16 82);
+  --svg-chart-grid: oklch(0.22 0.012 56);
+}
+
+@theme inline {
+  --font-sans: var(--font-jetbrains), 'JetBrains Mono', monospace;
+  --font-mono: var(--font-ibm), var(--font-jetbrains), 'IBM Plex Mono', 'JetBrains Mono', monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --radius-xl: calc(var(--radius) + 6px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Retro terminal scanline overlay */
+@layer utilities {
+  .scanlines {
+    position: relative;
+  }
+  .scanlines::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent,
+      transparent 2px,
+      var(--scanline) 2px,
+      var(--scanline) 4px
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .terminal-box {
+    border: 1px solid var(--terminal-border);
+    border-radius: var(--radius);
+    position: relative;
+  }
+  .terminal-box::before {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: calc(var(--radius) + 1px);
+    box-shadow: 0 0 0 1px var(--terminal-border), 0 0 12px -4px var(--glow);
+    pointer-events: none;
+  }
+
+  .phosphor-glow {
+    text-shadow: 0 0 8px var(--glow);
+  }
+
+  .retro-btn {
+    @apply font-mono text-xs tracking-widest uppercase border border-border bg-secondary text-secondary-foreground;
+    @apply hover:border-primary/60 hover:text-primary hover:bg-primary/8 transition-all duration-150;
+  }
+}

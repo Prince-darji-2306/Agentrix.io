@@ -1,1 +1,9 @@
 backend/.env
+backend/__pycache__
+backend/schemas/__pycache__
+backend/utils/__pycache__
+backend/chroma_storage
+CLUADE.md
+temp.py
+temp2.py
+test_chroma.py
