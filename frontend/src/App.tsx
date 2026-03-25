@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import AppShell from "@/components/amcas/AppShell";
 import Landing from "@/components/amcas/LandingPage";
+import LoginPage from "@/components/amcas/LoginPage";
+import RegisterPage from "@/components/amcas/RegisterPage";
 
 const ProtectedRoute = ({ children, authed }: { children: React.ReactNode, authed: boolean }) => {
   const location = useLocation();
@@ -26,6 +28,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing onEnterApp={handleAuth} />} />
+      <Route path="/login" element={<LoginPage onEnterApp={handleAuth} />} />
+      <Route path="/register" element={<RegisterPage onEnterApp={handleAuth} />} />
       <Route
         path="/*"
         element={

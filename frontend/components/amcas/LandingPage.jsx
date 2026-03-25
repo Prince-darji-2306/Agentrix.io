@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTheme } from "@/components/theme-provider";
 import {
   ArrowLeft,
@@ -1749,8 +1750,8 @@ function AuthScreen({ mode, onSwitch, onBack, onAuth, ThemeBtn }) {
 }
 
 // ─── Main Landing ─────────────────────────────────────────────────────────────
-export default function App({ onEnterApp }) {
-  const [view, setView] = useState("landing");
+export default function Landing({ onEnterApp }) {
+  const navigate = useNavigate();
   const { resolvedTheme, setTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const toggleTheme = () => setTheme(isDark ? "light" : "dark");
@@ -1784,45 +1785,6 @@ export default function App({ onEnterApp }) {
     >
       {isDark ? <SunIcon /> : <MoonIcon />}
     </button>
-  );
-
-  const handleAuth = () => {
-    if (onEnterApp) { onEnterApp(); return; }
-    setView("app");
-  };
-
-  if (view === "login") return (
-    <>
-      <style>{STYLES}</style>
-      <style>{`:root{${isDark ? DARK_VARS : LIGHT_VARS}}`}</style>
-      <AuthScreen mode="login" onSwitch={() => setView("register")} onBack={() => setView("landing")} onAuth={handleAuth} ThemeBtn={ThemeBtn} />
-    </>
-  );
-  if (view === "register") return (
-    <>
-      <style>{STYLES}</style>
-      <style>{`:root{${isDark ? DARK_VARS : LIGHT_VARS}}`}</style>
-      <AuthScreen mode="register" onSwitch={() => setView("login")} onBack={() => setView("landing")} onAuth={handleAuth} ThemeBtn={ThemeBtn} />
-    </>
-  );
-  if (view === "app") return (
-    <>
-      <style>{STYLES}</style>
-      <style>{`:root{${isDark ? DARK_VARS : LIGHT_VARS}}`}</style>
-      <div style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20, position: "relative" }}>
-        <div style={{ position: "absolute", top: 20, right: 20 }}><ThemeBtn /></div>
-        <div style={{ border: "1px solid rgba(74,175,122,0.4)", background: "var(--card)", padding: 40, maxWidth: 420, width: "100%", textAlign: "center", margin: 24 }}>
-          <div style={{ marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center" }}><Bot size={28} style={{ color: "var(--fg)" }} /></div>
-          <p style={{ fontSize: 12, fontWeight: 700, color: "var(--chart-2)", textTransform: "uppercase", letterSpacing: "0.15em", marginBottom: 8 }}>Welcome to Agentrix.io</p>
-          <p style={{ fontSize: 10, color: "var(--muted)", lineHeight: 1.7, marginBottom: 20 }}>
-            Your agent profile has been initialized. In the full application this would launch the Chat Interface, Task Graph, Debate Arena, and the Memory + Reflection module.
-          </p>
-          <button onClick={() => setView("landing")} style={{ background: "none", border: "1px solid var(--border)", color: "var(--muted)", padding: "8px 20px", fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit" }}>
-            <><ArrowLeft size={14} /> Back to landing</>
-          </button>
-        </div>
-      </div>
-    </>
   );
 
   // ── Data ────────────────────────────────────────────────────────────────────
@@ -1892,8 +1854,8 @@ export default function App({ onEnterApp }) {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <ThemeBtn style={{ marginRight: 4 }} />
-              <button onClick={() => setView("login")} style={{ ...S.secondaryBtn, padding: "8px 16px" }}>Sign In</button>
-              <button onClick={() => setView("register")} style={{ ...S.primaryBtn, padding: "8px 16px" }}>Get Started</button>
+              <button onClick={() => navigate("/login")} style={{ ...S.secondaryBtn, padding: "8px 16px" }}>Sign In</button>
+              <button onClick={() => navigate("/register")} style={{ ...S.primaryBtn, padding: "8px 16px" }}>Get Started</button>
             </div>
           </div>
         </nav>
@@ -1937,11 +1899,11 @@ export default function App({ onEnterApp }) {
             <RevealSection delay={300}>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center", marginBottom: 56 }}>
                 <button style={S.primaryBtn}
-                  onClick={() => setView("register")}
+                  onClick={() => navigate("/register")}
                   onMouseEnter={e => { e.currentTarget.style.background = "rgba(200,136,42,0.2)"; e.currentTarget.style.boxShadow = "0 0 28px -8px var(--primary-glow)"; }}
                   onMouseLeave={e => { e.currentTarget.style.background = "rgba(200,136,42,0.1)"; e.currentTarget.style.boxShadow = "none"; }}
                 >
-                  &gt;_ Initialize Session
+                  >_ Initialize Session
                 </button>
                 <button style={S.secondaryBtn}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(200,136,42,0.4)"; }}
@@ -2204,12 +2166,12 @@ export default function App({ onEnterApp }) {
                 Initialize your agent profile and access the full suite of cognitive modules. Free to start. No credit card required.
               </p>
               <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
-                <button style={S.primaryBtn} onClick={() => setView("register")}
+                <button style={S.primaryBtn} onClick={() => navigate("/register")}
                   onMouseEnter={e => { e.currentTarget.style.background = "rgba(200,136,42,0.22)"; e.currentTarget.style.boxShadow = "0 0 28px -8px rgba(200,136,42,0.4)"; }}
                   onMouseLeave={e => { e.currentTarget.style.background = "rgba(200,136,42,0.1)"; e.currentTarget.style.boxShadow = "none"; }}>
-                  &gt;_ Initialize Profile
+                  {">"}_ Initialize Profile
                 </button>
-                <button style={S.secondaryBtn} onClick={() => setView("login")}
+                <button style={S.secondaryBtn} onClick={() => navigate("/login")}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(200,136,42,0.4)"; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; }}
                 >Sign In <ArrowRight size={14} /></button>
