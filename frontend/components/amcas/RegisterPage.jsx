@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "@/components/theme-provider";
+import { register } from "@/lib/api";
 import { ArrowLeft, ArrowRight, CheckCircle2 } from "lucide-react";
 
 // ─── Theme CSS ────────────────────────────────────────────────────────────────
@@ -124,19 +125,23 @@ export default function RegisterPage({ onEnterApp }) {
     return e;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const e = validate();
     setErrors(e);
     if (Object.keys(e).length > 0) return;
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const res = await register(form.email, form.password, form.name || null);
       setLoading(false);
       setSubmitted(true);
       setTimeout(() => {
-        if (onEnterApp) { onEnterApp(); return; }
+        if (onEnterApp) { onEnterApp(res.token, res.user_id, res.display_name); return; }
         navigate("/chat");
       }, 1400);
-    }, 1800);
+    } catch (err) {
+      setLoading(false);
+      setErrors({ email: err.message || "Registration failed" });
+    }
   };
 
   const ThemeBtn = () => (

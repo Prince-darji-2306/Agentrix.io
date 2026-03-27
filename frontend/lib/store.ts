@@ -95,6 +95,12 @@ interface AppState {
   clearAllChats: () => void;
   isHistoryOpen: boolean;
   setIsHistoryOpen: (v: boolean) => void;
+  // Auth state
+  userId: string | null;
+  userDisplayName: string | null;
+  authToken: string | null;
+  setAuth: (token: string, userId: string, displayName: string | null) => void;
+  clearAuth: () => void;
 }
 
 const loadChatSessions = (): ChatSession[] => {
@@ -284,4 +290,21 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   isHistoryOpen: false,
   setIsHistoryOpen: (v) => set({ isHistoryOpen: v }),
+  // Auth state
+  userId: typeof window !== "undefined" ? localStorage.getItem("agentrix_user_id") : null,
+  userDisplayName: typeof window !== "undefined" ? localStorage.getItem("agentrix_display_name") : null,
+  authToken: typeof window !== "undefined" ? localStorage.getItem("agentrix_token") : null,
+  setAuth: (token, userId, displayName) => {
+    localStorage.setItem("agentrix_token", token);
+    localStorage.setItem("agentrix_user_id", userId);
+    if (displayName) localStorage.setItem("agentrix_display_name", displayName);
+    set({ authToken: token, userId, userDisplayName: displayName });
+  },
+  clearAuth: () => {
+    localStorage.removeItem("agentrix_token");
+    localStorage.removeItem("agentrix_user_id");
+    localStorage.removeItem("agentrix_display_name");
+    localStorage.removeItem("agentrix_auth");
+    set({ authToken: null, userId: null, userDisplayName: null });
+  },
 }));

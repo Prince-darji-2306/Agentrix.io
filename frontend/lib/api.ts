@@ -6,6 +6,142 @@ const API_BASE =
   env.NEXT_PUBLIC_API_URL ||
   "http://localhost:8000";
 
+// ─── Auth Headers ─────────────────────────────────────────────────────────────
+
+export function getAuthHeaders(): HeadersInit {
+  const token = localStorage.getItem("agentrix_token");
+  const headers: HeadersInit = { "Content-Type": "application/json" };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
+// ─── Auth API ─────────────────────────────────────────────────────────────────
+
+export interface AuthResponse {
+  token: string;
+  user_id: string;
+  display_name: string | null;
+}
+
+export async function register(email: string, password: string, display_name: string | null): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE}/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password, display_name }),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Registration failed" }));
+    throw new Error(error.detail || "Registration failed");
+  }
+  return res.json();
+}
+
+export async function login(email: string, password: string): Promise<AuthResponse> {
+  const res = await fetch(`${API_BASE}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Login failed" }));
+    throw new Error(error.detail || "Login failed");
+  }
+  return res.json();
+}
+
+// ─── History API ──────────────────────────────────────────────────────────────
+
+export interface HistoryMessage {
+  id: string;
+  reasoning_mode: string;
+  content: Array<{ user: string; assistant: string }>;
+  confidence: number | null;
+  consistency: number | null;
+  created_at: string;
+}
+
+export interface HistoryConversation {
+  id: string;
+  type: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  messages: HistoryMessage[];
+}
+
+export async function getHistory(): Promise<HistoryConversation[]> {
+  const res = await fetch(`${API_BASE}/history`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const error = await res.text();
+    throw new Error(`History API error: ${res.status} - ${error}`);
+  }
+  const data = await res.json();
+  return data.conversations || [];
+}
+
+export async function renameConversation(conversationId: string, title: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/history/${conversationId}`, {
+    method: "PUT",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Rename failed" }));
+    throw new Error(error.detail || "Rename failed");
+  }
+}
+
+export async function deleteConversation(conversationId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/history/${conversationId}`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Delete failed" }));
+    throw new Error(error.detail || "Delete failed");
+  }
+}
+
+export async function clearAllHistory(): Promise<{ deleted: number }> {
+  const res = await fetch(`${API_BASE}/history`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ detail: "Clear failed" }));
+    throw new Error(error.detail || "Clear failed");
+  }
+  return res.json();
+}
+
+// ─── Memory API ───────────────────────────────────────────────────────────────
+
+export interface PdfSummary {
+  id: string;
+  pdf_id: string;
+  doc_name: string;
+  doc_summary: string;
+  topic_tags: string[];
+  user_id: string;
+  conversation_id: string | null;
+}
+
+export async function getMemoryPdfs(): Promise<PdfSummary[]> {
+  const res = await fetch(`${API_BASE}/memory/pdfs`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const error = await res.text();
+    throw new Error(`Memory API error: ${res.status} - ${error}`);
+  }
+  const data = await res.json();
+  return data.pdfs || [];
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface ChatApiResponse {
@@ -103,7 +239,7 @@ export interface SmartSSEEvent {
 export async function callChatApiNonStreaming(query: string): Promise<ChatResult> {
   const res = await fetch(`${API_BASE}/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ query }),
   });
 
@@ -137,7 +273,7 @@ export async function callOrchestratorApi(
 ): Promise<ChatResult & { orchestratorRaw?: OrchestratorApiResponse }> {
   const res = await fetch(`${API_BASE}/orchestrator/task`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ task }),
   });
 
@@ -185,7 +321,9 @@ export async function* streamDebate(
   rounds: number = 3
 ): AsyncGenerator<DebateMessage> {
   const url = `${API_BASE}/debate/stream?topic=${encodeURIComponent(topic)}&rounds=${rounds}`;
-  const res = await fetch(url);
+  const res = await fetch(url, {
+    headers: getAuthHeaders(),
+  });
 
   if (!res.ok || !res.body) {
     throw new Error(`Debate stream error: ${res.status}`);
@@ -224,7 +362,7 @@ export async function* streamDebate(
 export async function* callSmartOrchestratorStream(task: string): AsyncGenerator<SmartSSEEvent> {
   const res = await fetch(`${API_BASE}/smart-orchestrator/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ task }),
   });
 
@@ -263,13 +401,19 @@ export async function* callSmartOrchestratorStream(task: string): AsyncGenerator
 
 // ─── Unified entry-point for ChatPage ────────────────────────────────────────
 
-export async function uploadPdfs(files: File[], userId: string = "default_user"): Promise<any> {
+export async function uploadPdfs(files: File[]): Promise<any> {
   const formData = new FormData();
   files.forEach((file) => formData.append("files", file));
-  formData.append("user_id", userId);
+
+  const token = localStorage.getItem("agentrix_token");
+  const headers: HeadersInit = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
 
   const res = await fetch(`${API_BASE}/upload-pdf`, {
     method: "POST",
+    headers,
     body: formData,
   });
 

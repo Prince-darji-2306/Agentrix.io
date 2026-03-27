@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { useAppStore } from "@/lib/store";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { X, MessageSquare, Clock, Trash2, Edit2, Check, XCircle } from "lucide-react";
+import { getHistory, renameConversation, deleteConversation, clearAllHistory, HistoryConversation } from "@/lib/api";
+import { useAppStore } from "@/lib/store";
+import { X, MessageSquare, Clock, Trash2, Loader2, Edit2, Check, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface HistoryPanelProps {
@@ -12,38 +13,85 @@ interface HistoryPanelProps {
 }
 
 export default function HistoryPanel({ isOpen, onClose }: HistoryPanelProps) {
-  const { chatSessions, currentChatId, setCurrentChat, deleteChat, clearAllChats, updateChatSession } = useAppStore();
+  const [conversations, setConversations] = useState<HistoryConversation[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const navigate = useNavigate();
+  const { setCurrentChat } = useAppStore();
 
-  const handleSelectChat = (id: string) => {
-    // Always navigate to chat page first, then set the chat
-    navigate("/chat");
-    setCurrentChat(id);
+  useEffect(() => {
+    if (isOpen) {
+      loadHistory();
+    }
+  }, [isOpen]);
+
+  async function loadHistory() {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await getHistory();
+      setConversations(data);
+    } catch (err: any) {
+      setError(err.message || "Failed to load history");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleSelectConversation = (conv: HistoryConversation) => {
+    // Load messages into the appropriate page
+    if (conv.type === "debate") {
+      navigate("/debate");
+    } else {
+      // Load messages into chat store
+      setCurrentChat(null); // Clear current local chat
+      navigate("/chat");
+    }
     onClose();
   };
 
-  const handleDeleteChat = (e: React.MouseEvent, id: string) => {
+  const handleRename = async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    if (confirm("Delete this chat?")) {
-      deleteChat(id);
-    }
-  };
-
-  const startEditing = (e: React.MouseEvent, session: any) => {
-    e.stopPropagation();
-    setEditingId(session.id);
-    setEditTitle(session.title);
-  };
-
-  const saveEdit = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    if (editTitle.trim()) {
-      updateChatSession(id, { title: editTitle.trim() });
+    if (!editTitle.trim()) return;
+    try {
+      await renameConversation(id, editTitle.trim());
+      setConversations((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, title: editTitle.trim() } : c))
+      );
+    } catch (err: any) {
+      alert(err.message || "Rename failed");
     }
     setEditingId(null);
     setEditTitle("");
+  };
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (!confirm("Delete this conversation?")) return;
+    try {
+      await deleteConversation(id);
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+    } catch (err: any) {
+      alert(err.message || "Delete failed");
+    }
+  };
+
+  const handleClearAll = async () => {
+    if (!confirm("Clear all chat history? This cannot be undone.")) return;
+    try {
+      await clearAllHistory();
+      setConversations([]);
+    } catch (err: any) {
+      alert(err.message || "Clear failed");
+    }
+  };
+
+  const startEditing = (e: React.MouseEvent, conv: HistoryConversation) => {
+    e.stopPropagation();
+    setEditingId(conv.id);
+    setEditTitle(conv.title);
   };
 
   const cancelEdit = (e: React.MouseEvent) => {
@@ -52,19 +100,10 @@ export default function HistoryPanel({ isOpen, onClose }: HistoryPanelProps) {
     setEditTitle("");
   };
 
-  const getModeColor = (mode: string) => {
-    switch (mode) {
-      case "standard": return "text-chart-2";
-      case "multi-agent": return "text-chart-3";
-      case "deep-research": return "text-chart-4";
-      default: return "text-muted-foreground";
-    }
-  };
-
-  // Simple relative time formatter
-  const formatRelativeTime = (date: Date) => {
+  const formatRelativeTime = (dateStr: string) => {
     const now = new Date();
-    const diff = now.getTime() - new Date(date).getTime();
+    const date = new Date(dateStr);
+    const diff = now.getTime() - date.getTime();
     const minutes = Math.floor(diff / (1000 * 60));
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
@@ -73,7 +112,28 @@ export default function HistoryPanel({ isOpen, onClose }: HistoryPanelProps) {
     if (minutes < 60) return `${minutes}m ago`;
     if (hours < 24) return `${hours}h ago`;
     if (days < 7) return `${days}d ago`;
-    return new Date(date).toLocaleDateString();
+    return date.toLocaleDateString();
+  };
+
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case "standard": return "text-chart-2";
+      case "debate": return "text-chart-4";
+      default: return "text-muted-foreground";
+    }
+  };
+
+  const getMessageCount = (conv: HistoryConversation) => {
+    return conv.messages.reduce((sum, msg) => sum + (msg.content?.length || 0), 0);
+  };
+
+  const getLastMessage = (conv: HistoryConversation) => {
+    if (conv.messages.length === 0) return "No messages";
+    const lastMsg = conv.messages[conv.messages.length - 1];
+    const lastEntry = lastMsg.content?.[lastMsg.content.length - 1];
+    if (!lastEntry) return "No messages";
+    const text = lastEntry.user || lastEntry.assistant || "";
+    return text.length > 80 ? text.slice(0, 80) + "…" : text;
   };
 
   return (
@@ -86,7 +146,8 @@ export default function HistoryPanel({ isOpen, onClose }: HistoryPanelProps) {
       {/* Backdrop with blur */}
       <div
         className="absolute inset-0 bg-background/50 backdrop-blur-[2px]"
-        onClick={onClose} />
+        onClick={onClose}
+      />
 
       {/* Panel */}
       <div
@@ -103,18 +164,14 @@ export default function HistoryPanel({ isOpen, onClose }: HistoryPanelProps) {
               Chat History
             </h2>
             <span className="text-[9px] font-mono tracking-widest text-muted-foreground/60 uppercase">
-              {chatSessions.length} session{chatSessions.length !== 1 ? "s" : ""}
+              {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            {chatSessions.length > 0 && (
+            {conversations.length > 0 && (
               <button
-                onClick={() => {
-                  if (confirm("Clear all chat history?")) {
-                    clearAllChats();
-                  }
-                }}
-                title="Clear all"
+                onClick={handleClearAll}
+                title="Clear all history"
                 className="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-mono text-destructive/70 border border-destructive/20 hover:bg-destructive/10 transition-colors"
               >
                 <Trash2 className="w-3 h-3" />
@@ -132,7 +189,22 @@ export default function HistoryPanel({ isOpen, onClose }: HistoryPanelProps) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-5">
-          {chatSessions.length === 0 ? (
+          {loading ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3">
+              <Loader2 className="w-6 h-6 text-primary animate-spin" />
+              <p className="text-xs font-mono text-muted-foreground">Loading history...</p>
+            </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center h-full gap-3">
+              <p className="text-xs text-muted-foreground">{error}</p>
+              <button
+                onClick={loadHistory}
+                className="text-[9px] text-primary hover:underline uppercase tracking-widest"
+              >
+                Retry
+              </button>
+            </div>
+          ) : conversations.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-center gap-3">
               <MessageSquare className="w-12 h-12 text-muted-foreground/30" />
               <div>
@@ -144,103 +216,102 @@ export default function HistoryPanel({ isOpen, onClose }: HistoryPanelProps) {
             </div>
           ) : (
             <div className="space-y-3">
-              {/* Sort by updatedAt desc */}
-              {[...chatSessions]
-                .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-                .map((session) => {
-                  const isActive = session.id === currentChatId;
-                  return (
-                    <div
-                      key={session.id}
-                      onClick={() => handleSelectChat(session.id)}
-                      className={cn(
-                        "group relative p-4 border transition-all cursor-pointer",
-                        isActive
-                          ? "border-primary/40 bg-primary/5 shadow-[inset_0_0_12px_-4px_var(--glow)]"
-                          : "border-border hover:border-primary/30 bg-card hover:bg-primary/5"
-                      )} >
-                      {/* Selection overlay */}
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          {/* Title & mode */}
-                          <div className="flex items-center gap-2 mb-1">
+              {conversations.map((conv) => (
+                <button
+                  key={conv.id}
+                  onClick={() => handleSelectConversation(conv)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      handleSelectConversation(conv);
+                    }
+                  }}
+                  className="group relative w-full p-4 border border-border hover:border-primary/30 bg-card hover:bg-primary/5 transition-all cursor-pointer text-left"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      {/* Title & type */}
+                      <div className="flex items-center gap-2 mb-1">
+                        {editingId === conv.id ? (
+                          <div className="flex items-center gap-1 flex-1" role="region" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              className="flex-1 bg-background border border-border text-xs font-mono text-foreground px-2 py-1 outline-none focus:border-primary"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleRename(e as any, conv.id);
+                                if (e.key === "Escape") cancelEdit(e as any);
+                              }}
+                            />
+                            <button
+                              onClick={(e) => handleRename(e, conv.id)}
+                              className="text-chart-2 hover:text-chart-2/80"
+                              type="button"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              className="text-destructive/70 hover:text-destructive"
+                              type="button"
+                            >
+                              <XCircle className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <>
                             <span className="text-xs font-mono font-bold text-foreground truncate flex-1">
-                              {session.title}
+                              {conv.title}
                             </span>
-                            <span className={cn("text-[9px] font-mono uppercase tracking-wider shrink-0", getModeColor(session.mode))}>
-                              {session.mode.replace("-", " ")}
+                            <span className={cn("text-[9px] font-mono uppercase tracking-wider shrink-0", getTypeColor(conv.type))}>
+                              {conv.type}
                             </span>
-                            {editingId === session.id ? (
-                              <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()} >
-                                <input
-                                  type="text"
-                                  value={editTitle}
-                                  onChange={(e) => setEditTitle(e.target.value)}
-                                  className="w-32 bg-background border border-border text-xs font-mono text-foreground px-2 py-1 outline-none focus:border-primary"
-                                  autoFocus
-                                  onKeyDown={(e) => {
-                                    if (e.key === "Enter") saveEdit(e, session.id);
-                                    if (e.key === "Escape") cancelEdit(e);
-                                  }}
-                                />
-                                <button
-                                  onClick={(e) => saveEdit(e, session.id)}
-                                  className="text-chart-2 hover:text-chart-2/80"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  onClick={cancelEdit}
-                                  className="text-destructive/70 hover:text-destructive"
-                                >
-                                  <XCircle className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={(e) => startEditing(e, session)}
-                                title="Rename chat"
-                                className="opacity-0 group-hover:opacity-100 flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-
-                          {/* Description */}
-                          <p className="text-[10px] font-mono text-muted-foreground line-clamp-2 mb-2">
-                            {session.description}
-                          </p>
-
-                          {/* Meta */}
-                          <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground/60">
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              {formatRelativeTime(session.updatedAt)}
-                            </span>
-                            <span>{session.messages.length} messages</span>
-                          </div>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={(e) => handleDeleteChat(e, session.id)}
-                            title="Delete chat"
-                            className="flex items-center justify-center w-8 h-8 text-destructive/70 hover:bg-destructive/10 transition-colors"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                          </>
+                        )}
                       </div>
 
-                      {/* Active indicator */}
-                      {isActive && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-8 bg-primary" />
-                      )}
+                      {/* Last message preview */}
+                      <p className="text-[10px] font-mono text-muted-foreground line-clamp-2 mb-2">
+                        {getLastMessage(conv)}
+                      </p>
+
+                      {/* Meta */}
+                      <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground/60">
+                        <span className="flex items-center gap-1">
+                          <Clock className="w-3 h-3" />
+                          {formatRelativeTime(conv.updated_at)}
+                        </span>
+                        <span>{getMessageCount(conv)} messages</span>
+                        {conv.messages[0]?.confidence != null && (
+                          <span>Confidence: {Math.round(conv.messages[0].confidence * 100)}%</span>
+                        )}
+                      </div>
                     </div>
-                  );
-                })}
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => startEditing(e, conv)}
+                        title="Rename"
+                        className="flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                        type="button"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => handleDelete(e, conv.id)}
+                        title="Delete"
+                        className="flex items-center justify-center w-8 h-8 text-destructive/70 hover:bg-destructive/10 transition-colors"
+                        type="button"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </button>
+              ))}
             </div>
           )}
         </div>

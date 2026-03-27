@@ -45,17 +45,17 @@ const LIGHT_VARS = `
 function SunIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/>
-      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
-      <line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/>
-      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+      <circle cx="12" cy="12" r="4" /><line x1="12" y1="2" x2="12" y2="6" /><line x1="12" y1="18" x2="12" y2="22" />
+      <line x1="4.93" y1="4.93" x2="7.76" y2="7.76" /><line x1="16.24" y1="16.24" x2="19.07" y2="19.07" />
+      <line x1="2" y1="12" x2="6" y2="12" /><line x1="18" y1="12" x2="22" y2="12" />
+      <line x1="4.93" y1="19.07" x2="7.76" y2="16.24" /><line x1="16.24" y1="7.76" x2="19.07" y2="4.93" />
     </svg>
   );
 }
 function MoonIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
     </svg>
   );
 }
@@ -577,7 +577,7 @@ function ChatPreview() {
         <div style={{ border: "1px solid var(--primary)", background: "rgba(200,136,42,0.1)", padding: "4px 10px", fontSize: 8, color: "var(--primary)", fontWeight: "bold", textTransform: "uppercase", cursor: "default" }}>Send</div>
       </div>
     </div>
-);
+  );
 }
 
 // --- Module Preview: Task Graph (pure SVG, no external library) ---
@@ -587,11 +587,11 @@ function TaskGraphPreview() {
   const [dashOffset, setDashOffset] = useState(0);
   const [showAppPreview, setShowAppPreview] = useState(false);
   const [appPreviewFrame, setAppPreviewFrame] = useState(0);
- 
+
   // Animation sequence — tools share their agent's step (no separate slot)
   // Steps: orchestrator → agent1(+tool1) → agent2(+tool2) → agent3(+tool3) → debugger → output
-  const order = ["orchestrator","agent1","agent2","agent3","debugger","output"];
- 
+  const order = ["orchestrator", "agent1", "agent2", "agent3", "debugger", "output"];
+
   // Map: which step each node ID is active on
   const nodeStep = {
     orchestrator: 0,
@@ -601,7 +601,7 @@ function TaskGraphPreview() {
     debugger: 4,
     output: 5,
   };
- 
+
   // Step through sequence - Output node active for 2 seconds, others for 900ms
   useEffect(() => {
     if (!inView) return;
@@ -617,7 +617,7 @@ function TaskGraphPreview() {
     runStep(0);
     return () => clearTimeout(timeoutId);
   }, [inView]);
- 
+
   // App preview visible exactly while output step is active
   useEffect(() => {
     if (order[activeIndex] === "output") {
@@ -627,14 +627,14 @@ function TaskGraphPreview() {
       setShowAppPreview(false);
     }
   }, [activeIndex]);
- 
+
   // Animate app preview frames while visible
   useEffect(() => {
     if (!showAppPreview) return;
     const iv = setInterval(() => setAppPreviewFrame(f => (f + 1) % 4), 280);
     return () => clearInterval(iv);
   }, [showAppPreview]);
- 
+
   // Flowing dash animation via rAF
   useEffect(() => {
     let frame;
@@ -647,72 +647,35 @@ function TaskGraphPreview() {
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, []);
- 
+
   const activeId = order[activeIndex];
- 
+
   // A node is "active" if its assigned step matches current activeIndex
   const isActiveNode = (id) => nodeStep[id] === activeIndex;
- 
-  // ── Canvas ──────────────────────────────────────────────────────────────────
-  // ViewBox: 800 × 560 matching TaskGraphPage style
-  // Node height: 50px, width: 140px  (exactly as in TaskGraphPage.tsx)
-  // Grid dot spacing: 40×40
-  //
-  // Layout (node center positions):
-  //   Orchestrator : col0  x=100  y=280   (center vertically)
-  //   Agent1       : col1  x=280  y=140   (top agent)
-  //   Tool1        : col1  x=280  y=50    (circle above agent1)  r=26
-  //   Agent2       : col1  x=280  y=280   (middle agent)
-  //   Tool2        : col1  x=280  y=420   (circle below agent2)  r=26
-  //   Agent3       : col1  x=280  y=420   — conflict, shift Tool2
-  //
-  // Revised to avoid overlap:
-  //   Agent1  : x=280  y=110
-  //   Tool1   : x=280  y=38   (above agent1, circle r=22)
-  //   Agent2  : x=280  y=255
-  //   Tool2   : x=280  y=373  (below agent2, circle r=22)
-  //   Agent3  : x=280  y=420  ← too cramped; use 3 rows with more spacing
-  //
-  // Final layout (no overlap, generous spacing):
-  //   SVG: 800 × 500
-  //   Orchestrator : x=95   y=250  w=140 h=50
-  //   Agent1       : x=280  y=100  w=140 h=50   Tool1 circle: x=280 y=30 r=20
-  //   Agent2       : x=280  y=250  w=140 h=50   Tool2 circle: x=280 y=368 r=20
-  //   Agent3       : x=280  y=398  w=140 h=50   Tool3 circle: x=280 y=305 r=20  (above agent3)
-  //   Debugger     : x=470  y=250  w=140 h=50
-  //   Output       : x=650  y=250  w=140 h=50
-  //   AppPreview   : x=650  y=130  w=140 h=92   (floating above output)
- 
   const VW = 810, VH = 460;
- 
-  // Node definitions — kind:"rect" or kind:"tool"
-  // r:38 for all tools. Layout with generous gaps:
-  //   agent1 cy=120 (top=95),   tool1 cy=38  (bottom=76, gap=19 to agent top)
-  //   agent2 cy=300 (bot=325),  tool2 cy=368 (top=330, gap=5 to agent bot → push to cy=375)
-  //   agent3 cy=510 (top=485),  tool3 cy=440 (bot=478, gap=7 to agent top)
-  //   debugger cy=300, output cy=300
+
   const N = {
-    orchestrator: { id:"orchestrator", label:"Orchestrator",   sub:"ORCHESTRATOR · 0.2s", type:"orchestrator", cx:70,  cy:230, w:140, h:50, kind:"rect", color:"#c8882a", glow:"rgba(200,136,42,0.6)", bg:"rgba(200,136,42,0.10)", abg:"rgba(200,136,42,0.22)" },
-    agent1:       { id:"agent1",       label:"Coding Agent 1", sub:"AGENT · 1.1s",         type:"agent",        cx:315, cy:80, w:140, h:50, kind:"rect", color:"#c8882a", glow:"rgba(200,136,42,0.6)", bg:"rgba(200,136,42,0.08)", abg:"rgba(200,136,42,0.20)", activity:"Generating" },
-    tool1:        { id:"tool1",        label:"Doc Tool",        sub:"API",                 type:"agent",        cx:280, cy:155, r:24,  kind:"tool", color:"#c8882a", glow:"rgba(200,136,42,0.6)", bg:"rgba(200,136,42,0.10)", abg:"rgba(200,136,42,0.24)" },
-    agent2:       { id:"agent2",       label:"Coding Agent 2", sub:"AGENT · 0.9s",          type:"agent",        cx:315, cy:230, w:140, h:50, kind:"rect", color:"#4aaf7a", glow:"rgba(74,175,122,0.6)", bg:"rgba(74,175,122,0.08)", abg:"rgba(74,175,122,0.20)", activity:"Searching" },
-    tool2:        { id:"tool2",        label:"Web Search",      sub:"QUERY",                type:"agent",        cx:345, cy:155, r:24,  kind:"tool", color:"#4aaf7a", glow:"rgba(74,175,122,0.6)", bg:"rgba(74,175,122,0.10)", abg:"rgba(74,175,122,0.24)" },
-    agent3:       { id:"agent3",       label:"Coding Agent 3", sub:"AGENT · 1.3s",          type:"agent",        cx:315, cy:360, w:140, h:50, kind:"rect", color:"#c8a42a", glow:"rgba(200,164,42,0.6)", bg:"rgba(200,164,42,0.08)", abg:"rgba(200,164,42,0.20)", activity:"Inspecting" },
-    tool3:        { id:"tool3",        label:"Code Analyzer",   sub:"SCAN",                 type:"agent",        cx:335, cy:290, r:24,  kind:"tool", color:"#c8a42a", glow:"rgba(200,164,42,0.6)", bg:"rgba(200,164,42,0.10)", abg:"rgba(200,164,42,0.24)" },
-    debugger:     { id:"debugger",     label:"Debugger",        sub:"CRITIC · 0.7s",         type:"critic",       cx:580, cy:230, w:140, h:50, kind:"rect", color:"#c85a2a", glow:"rgba(200,90,42,0.6)",  bg:"rgba(200,90,42,0.08)",  abg:"rgba(200,90,42,0.20)",  activity:"Verifying" },
-    output:       { id:"output",       label:"Output",          sub:"OUTPUT · done",         type:"output",       cx:740, cy:230, w:140, h:50, kind:"rect", color:"#7a9abf", glow:"rgba(122,154,191,0.6)", bg:"rgba(80,110,160,0.08)", abg:"rgba(80,110,160,0.22)" },
+    orchestrator: { id: "orchestrator", label: "Orchestrator", sub: "ORCHESTRATOR · 0.2s", type: "orchestrator", cx: 70, cy: 230, w: 140, h: 50, kind: "rect", color: "#c8882a", glow: "rgba(200,136,42,0.6)", bg: "rgba(200,136,42,0.10)", abg: "rgba(200,136,42,0.22)" },
+    agent1: { id: "agent1", label: "Coding Agent 1", sub: "AGENT · 1.1s", type: "agent", cx: 315, cy: 80, w: 140, h: 50, kind: "rect", color: "#c8882a", glow: "rgba(200,136,42,0.6)", bg: "rgba(200,136,42,0.08)", abg: "rgba(200,136,42,0.20)", activity: "Generating" },
+    tool1: { id: "tool1", label: "Doc Tool", sub: "API", type: "agent", cx: 280, cy: 155, r: 24, kind: "tool", color: "#c8882a", glow: "rgba(200,136,42,0.6)", bg: "rgba(200,136,42,0.10)", abg: "rgba(200,136,42,0.24)" },
+    agent2: { id: "agent2", label: "Coding Agent 2", sub: "AGENT · 0.9s", type: "agent", cx: 315, cy: 230, w: 140, h: 50, kind: "rect", color: "#4aaf7a", glow: "rgba(74,175,122,0.6)", bg: "rgba(74,175,122,0.08)", abg: "rgba(74,175,122,0.20)", activity: "Searching" },
+    tool2: { id: "tool2", label: "Web Search", sub: "QUERY", type: "agent", cx: 345, cy: 155, r: 24, kind: "tool", color: "#4aaf7a", glow: "rgba(74,175,122,0.6)", bg: "rgba(74,175,122,0.10)", abg: "rgba(74,175,122,0.24)" },
+    agent3: { id: "agent3", label: "Coding Agent 3", sub: "AGENT · 1.3s", type: "agent", cx: 315, cy: 360, w: 140, h: 50, kind: "rect", color: "#c8a42a", glow: "rgba(200,164,42,0.6)", bg: "rgba(200,164,42,0.08)", abg: "rgba(200,164,42,0.20)", activity: "Inspecting" },
+    tool3: { id: "tool3", label: "Code Analyzer", sub: "SCAN", type: "agent", cx: 335, cy: 290, r: 24, kind: "tool", color: "#c8a42a", glow: "rgba(200,164,42,0.6)", bg: "rgba(200,164,42,0.10)", abg: "rgba(200,164,42,0.24)" },
+    debugger: { id: "debugger", label: "Debugger", sub: "CRITIC · 0.7s", type: "critic", cx: 580, cy: 230, w: 140, h: 50, kind: "rect", color: "#c85a2a", glow: "rgba(200,90,42,0.6)", bg: "rgba(200,90,42,0.08)", abg: "rgba(200,90,42,0.20)", activity: "Verifying" },
+    output: { id: "output", label: "Output", sub: "OUTPUT · done", type: "output", cx: 740, cy: 230, w: 140, h: 50, kind: "rect", color: "#7a9abf", glow: "rgba(122,154,191,0.6)", bg: "rgba(80,110,160,0.08)", abg: "rgba(80,110,160,0.22)" },
   };
- 
+
   const isActive = id => isActiveNode(id);
- 
+
   // Edge connection helpers
-  const rL = n => ({ x: n.cx - n.w/2,  y: n.cy });
-  const rR = n => ({ x: n.cx + n.w/2,  y: n.cy });
-  const rT = n => ({ x: n.cx,           y: n.cy - n.h/2 });
-  const rB = n => ({ x: n.cx,           y: n.cy + n.h/2 });
-  const cT = n => ({ x: n.cx,           y: n.cy - n.r });
-  const cB = n => ({ x: n.cx,           y: n.cy + n.r });
- 
+  const rL = n => ({ x: n.cx - n.w / 2, y: n.cy });
+  const rR = n => ({ x: n.cx + n.w / 2, y: n.cy });
+  const rT = n => ({ x: n.cx, y: n.cy - n.h / 2 });
+  const rB = n => ({ x: n.cx, y: n.cy + n.h / 2 });
+  const cT = n => ({ x: n.cx, y: n.cy - n.r });
+  const cB = n => ({ x: n.cx, y: n.cy + n.r });
+
   // Compute all edges
   const buildEdges = () => {
     // An edge is active if any of its endpoint node IDs is currently active
@@ -723,33 +686,33 @@ function TaskGraphPreview() {
     const n = N;
     return [
       // Orchestrator → Agent1 (elbow up-right)
-      (() => { const f=rR(n.orchestrator), t=rL(n.agent1), mx=f.x+40; return e(`M${f.x},${f.y} L${mx},${f.y} L${mx},${t.y} L${t.x},${t.y}`, t.x, t.y, "right", "#c8882a", ["orchestrator","agent1"]); })(),
+      (() => { const f = rR(n.orchestrator), t = rL(n.agent1), mx = f.x + 40; return e(`M${f.x},${f.y} L${mx},${f.y} L${mx},${t.y} L${t.x},${t.y}`, t.x, t.y, "right", "#c8882a", ["orchestrator", "agent1"]); })(),
       // Orchestrator → Agent2 (straight)
-      (() => { const f=rR(n.orchestrator), t=rL(n.agent2); return e(`M${f.x},${f.y} L${t.x},${t.y}`, t.x, t.y, "right", "#4aaf7a", ["orchestrator","agent2"]); })(),
+      (() => { const f = rR(n.orchestrator), t = rL(n.agent2); return e(`M${f.x},${f.y} L${t.x},${t.y}`, t.x, t.y, "right", "#4aaf7a", ["orchestrator", "agent2"]); })(),
       // Orchestrator → Agent3 (elbow down-right)
-      (() => { const f=rR(n.orchestrator), t=rL(n.agent3), mx=f.x+40; return e(`M${f.x},${f.y} L${mx},${f.y} L${mx},${t.y} L${t.x},${t.y}`, t.x, t.y, "right", "#c8a42a", ["orchestrator","agent3"]); })(),
+      (() => { const f = rR(n.orchestrator), t = rL(n.agent3), mx = f.x + 40; return e(`M${f.x},${f.y} L${mx},${f.y} L${mx},${t.y} L${t.x},${t.y}`, t.x, t.y, "right", "#c8a42a", ["orchestrator", "agent3"]); })(),
       // Agent1 → Tool1 (straight down - tool1 is now below agent1)
-      (() => { const f=rB(n.agent1), t=cT(n.tool1); return e(`M${f.x},${f.y} L${t.x},${t.y}`, t.x, t.y, "down", "#c8882a", ["agent1","tool1"]); })(),
+      (() => { const f = rB(n.agent1), t = cT(n.tool1); return e(`M${f.x},${f.y} L${t.x},${t.y}`, t.x, t.y, "down", "#c8882a", ["agent1", "tool1"]); })(),
       // Agent2 → Tool2 (straight up - tool2 is now above agent2)
-      (() => { const f=rT(n.agent2), t=cB(n.tool2); return e(`M${f.x},${f.y} L${t.x},${t.y}`, t.x, t.y, "up", "#4aaf7a", ["agent2","tool2"]); })(),
+      (() => { const f = rT(n.agent2), t = cB(n.tool2); return e(`M${f.x},${f.y} L${t.x},${t.y}`, t.x, t.y, "up", "#4aaf7a", ["agent2", "tool2"]); })(),
       // Agent3 → Tool3 (straight up)
-      (() => { const f=rT(n.agent3), t=cB(n.tool3); return e(`M${f.x},${f.y} L${t.x},${t.y}`, t.x, t.y, "up", "#c8a42a", ["agent3","tool3"]); })(),
+      (() => { const f = rT(n.agent3), t = cB(n.tool3); return e(`M${f.x},${f.y} L${t.x},${t.y}`, t.x, t.y, "up", "#c8a42a", ["agent3", "tool3"]); })(),
       // Agent1 → Debugger (elbow right-down)
-      (() => { const f=rR(n.agent1), t=rL(n.debugger), mx=f.x+(t.x-f.x)*0.5; return e(`M${f.x},${f.y} L${mx},${f.y} L${mx},${t.y} L${t.x},${t.y}`, t.x, t.y, "right", "#c85a2a", ["agent1","debugger"]); })(),
+      (() => { const f = rR(n.agent1), t = rL(n.debugger), mx = f.x + (t.x - f.x) * 0.5; return e(`M${f.x},${f.y} L${mx},${f.y} L${mx},${t.y} L${t.x},${t.y}`, t.x, t.y, "right", "#c85a2a", ["agent1", "debugger"]); })(),
       // Agent2 → Debugger (straight)
-      (() => { const f=rR(n.agent2), t=rL(n.debugger); return e(`M${f.x},${f.y} L${t.x},${t.y}`, t.x, t.y, "right", "#c85a2a", ["agent2","debugger"]); })(),
+      (() => { const f = rR(n.agent2), t = rL(n.debugger); return e(`M${f.x},${f.y} L${t.x},${t.y}`, t.x, t.y, "right", "#c85a2a", ["agent2", "debugger"]); })(),
       // Agent3 → Debugger (elbow right-up)
-      (() => { const f=rR(n.agent3), t=rL(n.debugger), mx=f.x+(t.x-f.x)*0.5; return e(`M${f.x},${f.y} L${mx},${f.y} L${mx},${t.y} L${t.x},${t.y}`, t.x, t.y, "right", "#c85a2a", ["agent3","debugger"]); })(),
+      (() => { const f = rR(n.agent3), t = rL(n.debugger), mx = f.x + (t.x - f.x) * 0.5; return e(`M${f.x},${f.y} L${mx},${f.y} L${mx},${t.y} L${t.x},${t.y}`, t.x, t.y, "right", "#c85a2a", ["agent3", "debugger"]); })(),
       // Debugger → Output (straight)
-      (() => { const f=rR(n.debugger), t=rL(n.output); return e(`M${f.x},${f.y} L${t.x},${t.y}`, t.x, t.y, "right", "#7a9abf", ["debugger","output"]); })(),
+      (() => { const f = rR(n.debugger), t = rL(n.output); return e(`M${f.x},${f.y} L${t.x},${t.y}`, t.x, t.y, "right", "#7a9abf", ["debugger", "output"]); })(),
     ];
   };
- 
+
   const edges = buildEdges();
- 
+
   // Arrowhead (small circle at tip, matching TaskGraphPage style)
   const arrowDot = (x, y) => <circle key={`dot-${x}-${y}`} cx={x} cy={y} r={2.5} />;
- 
+
   // Status color for nodes
   const statusOf = (id) => {
     const step = nodeStep[id];
@@ -757,7 +720,7 @@ function TaskGraphPreview() {
     if (step === activeIndex) return "#c8a42a";     // running — amber
     return "rgba(120,110,100,0.4)";                 // pending — muted
   };
- 
+
   // Render a rect node (matching TaskGraphPage style exactly)
   const renderRect = (n) => {
     const active = isActive(n.id);
@@ -766,11 +729,11 @@ function TaskGraphPreview() {
     const col = n.color;
     const sc = statusOf(n.id);
     return (
-      <g key={n.id} style={{ cursor:"default" }}>
+      <g key={n.id} style={{ cursor: "default" }}>
         {/* Glow bloom behind active node */}
         {active && (
-          <rect x={x-8} y={y-8} width={n.w+16} height={n.h+16} rx={4}
-            fill={n.glow} opacity={0.15} style={{ filter:"blur(8px)" }} />
+          <rect x={x - 8} y={y - 8} width={n.w + 16} height={n.h + 16} rx={4}
+            fill={n.glow} opacity={0.15} style={{ filter: "blur(8px)" }} />
         )}
         {/* Node body */}
         <rect x={x} y={y} width={n.w} height={n.h} rx={0}
@@ -780,32 +743,32 @@ function TaskGraphPreview() {
         />
         {/* Corner bracket accents when active — exactly like TaskGraphPage */}
         {active && (<>
-          <line x1={x}       y1={y+7}    x2={x}       y2={y}      stroke={col} strokeWidth={2} />
-          <line x1={x}       y1={y}      x2={x+7}     y2={y}      stroke={col} strokeWidth={2} />
-          <line x1={x+n.w-7} y1={y}      x2={x+n.w}   y2={y}      stroke={col} strokeWidth={2} />
-          <line x1={x+n.w}   y1={y}      x2={x+n.w}   y2={y+7}    stroke={col} strokeWidth={2} />
-          <line x1={x}       y1={y+n.h-7}x2={x}       y2={y+n.h}  stroke={col} strokeWidth={2} />
-          <line x1={x}       y1={y+n.h}  x2={x+7}     y2={y+n.h}  stroke={col} strokeWidth={2} />
-          <line x1={x+n.w-7} y1={y+n.h}  x2={x+n.w}   y2={y+n.h}  stroke={col} strokeWidth={2} />
-          <line x1={x+n.w}   y1={y+n.h-7}x2={x+n.w}   y2={y+n.h}  stroke={col} strokeWidth={2} />
+          <line x1={x} y1={y + 7} x2={x} y2={y} stroke={col} strokeWidth={2} />
+          <line x1={x} y1={y} x2={x + 7} y2={y} stroke={col} strokeWidth={2} />
+          <line x1={x + n.w - 7} y1={y} x2={x + n.w} y2={y} stroke={col} strokeWidth={2} />
+          <line x1={x + n.w} y1={y} x2={x + n.w} y2={y + 7} stroke={col} strokeWidth={2} />
+          <line x1={x} y1={y + n.h - 7} x2={x} y2={y + n.h} stroke={col} strokeWidth={2} />
+          <line x1={x} y1={y + n.h} x2={x + 7} y2={y + n.h} stroke={col} strokeWidth={2} />
+          <line x1={x + n.w - 7} y1={y + n.h} x2={x + n.w} y2={y + n.h} stroke={col} strokeWidth={2} />
+          <line x1={x + n.w} y1={y + n.h - 7} x2={x + n.w} y2={y + n.h} stroke={col} strokeWidth={2} />
         </>)}
         {/* Status dot (top-right, like TaskGraphPage) */}
-        <circle cx={x+n.w-10} cy={y+10} r={3} fill={sc} />
+        <circle cx={x + n.w - 10} cy={y + 10} r={3} fill={sc} />
         {/* Label */}
-        <text x={n.cx} y={n.cy-6} textAnchor="middle"
+        <text x={n.cx} y={n.cy - 6} textAnchor="middle"
           fill={active ? col : "var(--fg)"}
           fontSize={9.5} fontWeight={600} fontFamily="JetBrains Mono,monospace">
           {n.label}
         </text>
         {/* Sub-label */}
-        <text x={n.cx} y={n.cy+9} textAnchor="middle"
+        <text x={n.cx} y={n.cy + 9} textAnchor="middle"
           fill="var(--fg-dim)" fontSize={7.5} fontFamily="JetBrains Mono,monospace">
           {active && n.activity ? `▶ ${n.activity.toUpperCase()}...` : n.sub}
         </text>
       </g>
     );
   };
- 
+
   // Render a tool circle node — r:24, text wrapped into 2 lines inside circle
   const renderTool = (n) => {
     const active = isActive(n.id);
@@ -819,10 +782,10 @@ function TaskGraphPreview() {
     // With r=24, text fits at fontSize 7.5 — two lines centered at cy±5, sub at cy+15
     return (
       <g key={n.id}>
-        {active && <circle cx={n.cx} cy={n.cy} r={n.r+10} fill={n.glow} opacity={0.16} style={{ filter:"blur(6px)" }} />}
+        {active && <circle cx={n.cx} cy={n.cy} r={n.r + 10} fill={n.glow} opacity={0.16} style={{ filter: "blur(6px)" }} />}
         <circle cx={n.cx} cy={n.cy} r={n.r} fill={active ? n.abg : n.bg} stroke={active ? col : "var(--border)"} strokeWidth={active ? 1.5 : 1} />
         {/* Pulsing ring when active */}
-        {active && <circle cx={n.cx} cy={n.cy} r={n.r} fill="none" stroke={col} strokeWidth={2} opacity={0.4} style={{ animation:"pulse 1s ease-in-out infinite" }} />}
+        {active && <circle cx={n.cx} cy={n.cy} r={n.r} fill="none" stroke={col} strokeWidth={2} opacity={0.4} style={{ animation: "pulse 1s ease-in-out infinite" }} />}
         {/* Status dot — top-right of circle */}
         <circle cx={n.cx + n.r * 0.70} cy={n.cy - n.r * 0.70} r={2} fill={statusOf(n.id)} />
         {/* Label lines */}
@@ -855,52 +818,52 @@ function TaskGraphPreview() {
       </g>
     );
   };
- 
+
   // Animated app preview (shown above Output node for 1.5s)
   const renderAppPreview = () => {
     if (!showAppPreview) return null;
-    const ox = N.output.cx - N.output.w/2;
-    const oy = N.output.cy - N.output.h/2;
+    const ox = N.output.cx - N.output.w / 2;
+    const oy = N.output.cy - N.output.h / 2;
     const pw = 140, ph = 96;
     const px = ox, py = oy - ph - 14;
     const col = N.output.color;
     const bars = [
-      { w: appPreviewFrame >= 0 ? 56 : 0, col:"rgba(122,154,191,0.55)" },
-      { w: appPreviewFrame >= 1 ? 80 : 0, col:"rgba(74,175,122,0.45)"  },
-      { w: appPreviewFrame >= 2 ? 40 : 0, col:"rgba(200,136,42,0.45)"  },
-      { w: appPreviewFrame >= 3 ? 65 : 0, col:"rgba(200,164,42,0.45)"  },
+      { w: appPreviewFrame >= 0 ? 56 : 0, col: "rgba(122,154,191,0.55)" },
+      { w: appPreviewFrame >= 1 ? 80 : 0, col: "rgba(74,175,122,0.45)" },
+      { w: appPreviewFrame >= 2 ? 40 : 0, col: "rgba(200,136,42,0.45)" },
+      { w: appPreviewFrame >= 3 ? 65 : 0, col: "rgba(200,164,42,0.45)" },
     ];
     // Use foreignObject for full CSS var support inside SVG
     return (
-      <g style={{ animation:"fadeIn 0.25s ease" }}>
+      <g style={{ animation: "fadeIn 0.25s ease" }}>
         {/* connector line */}
-        <line x1={N.output.cx} y1={oy} x2={N.output.cx} y2={py+ph}
+        <line x1={N.output.cx} y1={oy} x2={N.output.cx} y2={py + ph}
           stroke={col} strokeWidth={1} strokeDasharray="3 3" opacity={0.6} />
         {/* Preview card background — uses CSS vars via rect fill */}
         <rect x={px} y={py} width={pw} height={ph} rx={0}
           fill="var(--card)" stroke={col} strokeWidth={1.2} />
         {/* Inner border (slightly inset) for depth */}
-        <rect x={px+1} y={py+1} width={pw-2} height={ph-2} rx={0}
+        <rect x={px + 1} y={py + 1} width={pw - 2} height={ph - 2} rx={0}
           fill="none" stroke="var(--border)" strokeWidth={0.5} opacity={0.5} />
         {/* Corner bracket accents — like TaskGraphPage selected nodes */}
-        <line x1={px}      y1={py+6}    x2={px}      y2={py}      stroke={col} strokeWidth={1.5} />
-        <line x1={px}      y1={py}      x2={px+6}    y2={py}      stroke={col} strokeWidth={1.5} />
-        <line x1={px+pw-6} y1={py}      x2={px+pw}   y2={py}      stroke={col} strokeWidth={1.5} />
-        <line x1={px+pw}   y1={py}      x2={px+pw}   y2={py+6}    stroke={col} strokeWidth={1.5} />
-        <line x1={px}      y1={py+ph-6} x2={px}      y2={py+ph}   stroke={col} strokeWidth={1.5} />
-        <line x1={px}      y1={py+ph}   x2={px+6}    y2={py+ph}   stroke={col} strokeWidth={1.5} />
-        <line x1={px+pw-6} y1={py+ph}   x2={px+pw}   y2={py+ph}   stroke={col} strokeWidth={1.5} />
-        <line x1={px+pw}   y1={py+ph-6} x2={px+pw}   y2={py+ph}   stroke={col} strokeWidth={1.5} />
+        <line x1={px} y1={py + 6} x2={px} y2={py} stroke={col} strokeWidth={1.5} />
+        <line x1={px} y1={py} x2={px + 6} y2={py} stroke={col} strokeWidth={1.5} />
+        <line x1={px + pw - 6} y1={py} x2={px + pw} y2={py} stroke={col} strokeWidth={1.5} />
+        <line x1={px + pw} y1={py} x2={px + pw} y2={py + 6} stroke={col} strokeWidth={1.5} />
+        <line x1={px} y1={py + ph - 6} x2={px} y2={py + ph} stroke={col} strokeWidth={1.5} />
+        <line x1={px} y1={py + ph} x2={px + 6} y2={py + ph} stroke={col} strokeWidth={1.5} />
+        <line x1={px + pw - 6} y1={py + ph} x2={px + pw} y2={py + ph} stroke={col} strokeWidth={1.5} />
+        <line x1={px + pw} y1={py + ph - 6} x2={px + pw} y2={py + ph} stroke={col} strokeWidth={1.5} />
         {/* Header stripe — uses border color */}
         <rect x={px} y={py} width={pw} height={14} rx={0}
           fill={col} fillOpacity={0.10} />
-        <line x1={px} y1={py+14} x2={px+pw} y2={py+14} stroke="var(--border)" strokeWidth={0.5} />
+        <line x1={px} y1={py + 14} x2={px + pw} y2={py + 14} stroke="var(--border)" strokeWidth={0.5} />
         {/* Window chrome dots */}
-        <circle cx={px+7}  cy={py+7} r={2.5} fill="rgba(200,90,42,0.7)"  />
-        <circle cx={px+14} cy={py+7} r={2.5} fill="rgba(200,164,42,0.6)" />
-        <circle cx={px+21} cy={py+7} r={2.5} fill="rgba(74,175,122,0.7)" />
+        <circle cx={px + 7} cy={py + 7} r={2.5} fill="rgba(200,90,42,0.7)" />
+        <circle cx={px + 14} cy={py + 7} r={2.5} fill="rgba(200,164,42,0.6)" />
+        <circle cx={px + 21} cy={py + 7} r={2.5} fill="rgba(74,175,122,0.7)" />
         {/* Title */}
-        <text x={px+pw/2} y={py+9.5} textAnchor="middle"
+        <text x={px + pw / 2} y={py + 9.5} textAnchor="middle"
           fill={col} fillOpacity={0.9}
           fontSize={5.5} fontFamily="JetBrains Mono,monospace" fontWeight={700}>
           GENERATED APP
@@ -909,17 +872,17 @@ function TaskGraphPreview() {
         {bars.map((b, i) => (
           <g key={i}>
             {/* Track */}
-            <rect x={px+8} y={py+18+i*17} width={pw-16} height={10} rx={1}
+            <rect x={px + 8} y={py + 18 + i * 17} width={pw - 16} height={10} rx={1}
               fill="var(--border)" fillOpacity={0.3}
               stroke="var(--border)" strokeWidth={0.5} />
             {/* Fill */}
-            <rect x={px+8} y={py+18+i*17} width={b.w} height={10} rx={1}
+            <rect x={px + 8} y={py + 18 + i * 17} width={b.w} height={10} rx={1}
               fill={b.col}
-              style={{ transition:"width 0.25s ease" }} />
+              style={{ transition: "width 0.25s ease" }} />
           </g>
         ))}
         {/* "PREVIEW" stamp bottom-right */}
-        <text x={px+pw-6} y={py+ph-5} textAnchor="end"
+        <text x={px + pw - 6} y={py + ph - 5} textAnchor="end"
           fill={col} fillOpacity={0.45}
           fontSize={5} fontFamily="JetBrains Mono,monospace">
           PREVIEW
@@ -927,28 +890,28 @@ function TaskGraphPreview() {
       </g>
     );
   };
- 
+
   return (
-    <div ref={ref} className="preview-shell" style={{ display:"flex", flexDirection:"column", height: 350, overflow:"hidden", padding: "12px 12px 8px 12px" }}>
+    <div ref={ref} className="preview-shell" style={{ display: "flex", flexDirection: "column", height: 350, overflow: "hidden", padding: "12px 12px 8px 12px" }}>
       {/* Header bar */}
-      <div style={{ fontSize:7, color:"var(--fg-dim)", letterSpacing:"0.15em", textTransform:"uppercase", marginBottom:6, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+      <div style={{ fontSize: 7, color: "var(--fg-dim)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
         <span>TASK_GRAPH_EXPLORER</span>
-        <span style={{ color:"var(--primary)", letterSpacing:"0.1em" }}>
+        <span style={{ color: "var(--primary)", letterSpacing: "0.1em" }}>
           {activeId === "agent1" ? "AGENT 1 + DOC TOOL"
-          : activeId === "agent2" ? "AGENT 2 + WEB SEARCH"
-          : activeId === "agent3" ? "AGENT 3 + CODE ANALYZER"
-          : activeId === "orchestrator" ? "ORCHESTRATOR"
-          : activeId === "debugger" ? "DEBUGGER"
-          : activeId === "output" ? "OUTPUT"
-          : activeId.toUpperCase()}
+            : activeId === "agent2" ? "AGENT 2 + WEB SEARCH"
+              : activeId === "agent3" ? "AGENT 3 + CODE ANALYZER"
+                : activeId === "orchestrator" ? "ORCHESTRATOR"
+                  : activeId === "debugger" ? "DEBUGGER"
+                    : activeId === "output" ? "OUTPUT"
+                      : activeId.toUpperCase()}
         </span>
       </div>
 
       {/* SVG Graph — fills remaining space */}
-      <div style={{ flex:1, width:"100%", display:"flex", justifyContent:"center", overflow:"hidden", minHeight:0 }}>
+      <div style={{ flex: 1, width: "100%", display: "flex", justifyContent: "center", overflow: "hidden", minHeight: 0 }}>
         <svg
           viewBox={`0 0 ${VW} ${VH}`}
-          style={{ width:"100%", height:"100%", overflow:"hidden", fontFamily:"JetBrains Mono,monospace" }}
+          style={{ width: "100%", height: "100%", overflow: "hidden", fontFamily: "JetBrains Mono,monospace" }}
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
@@ -956,10 +919,10 @@ function TaskGraphPreview() {
               <circle cx="1" cy="1" r="0.8" fill="var(--primary)" fillOpacity="0.25" />
             </pattern>
           </defs>
- 
+
           {/* Dot-grid background (matching TaskGraphPage) */}
           <rect width={VW} height={VH} fill="url(#tg-grid)" />
- 
+
           {/* ── Edges (drawn below nodes) ── */}
           {edges.map((e, i) => {
             const sw = e.active ? 2 : 1.2;
@@ -989,32 +952,32 @@ function TaskGraphPreview() {
               </g>
             );
           })}
- 
+
           {/* ── Nodes ── */}
           {Object.values(N).map(n => n.kind === "tool" ? renderTool(n) : renderRect(n))}
- 
+
           {/* ── Animated App Preview on Output ── */}
           {renderAppPreview()}
         </svg>
       </div>
 
       {/* Progress rail */}
-      <div style={{ flexShrink:0, borderTop:"1px solid var(--border)", paddingTop:5, paddingBottom:2, display:"flex", gap:5, alignItems:"center", marginTop:4 }}>
+      <div style={{ flexShrink: 0, borderTop: "1px solid var(--border)", paddingTop: 5, paddingBottom: 2, display: "flex", gap: 5, alignItems: "center", marginTop: 4 }}>
         {order.map((id, i) => {
           const isAct = activeId === id;
           const isPast = i < activeIndex;
           const n = N[id];
           const barColor = isAct ? n.color : isPast ? `${n.color}66` : "var(--border)";
           return (
-            <div key={id} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+            <div key={id} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
               <div style={{
-                width:"100%", height:2, borderRadius:2,
+                width: "100%", height: 2, borderRadius: 2,
                 background: barColor,
-                transition:"background 0.35s ease",
+                transition: "background 0.35s ease",
                 boxShadow: isAct ? `0 0 7px ${n.glow}` : "none",
               }} />
-              <div style={{ fontSize:5, color: isAct ? n.color : "var(--fg-dim)", letterSpacing:"0.04em", textTransform:"uppercase", transition:"color 0.3s", textAlign:"center", lineHeight:1.2 }}>
-                {id === "orchestrator" ? "ORCH" : id === "debugger" ? "DBG" : id === "output" ? "OUT" : id.replace("agent","A").replace("tool","T").toUpperCase()}
+              <div style={{ fontSize: 5, color: isAct ? n.color : "var(--fg-dim)", letterSpacing: "0.04em", textTransform: "uppercase", transition: "color 0.3s", textAlign: "center", lineHeight: 1.2 }}>
+                {id === "orchestrator" ? "ORCH" : id === "debugger" ? "DBG" : id === "output" ? "OUT" : id.replace("agent", "A").replace("tool", "T").toUpperCase()}
               </div>
             </div>
           );
@@ -1035,7 +998,7 @@ function DebatePreview() {
     { role: "critic", text: "Specialization can fragment context; coherence may degrade." },
     { role: "proposer", text: "Orchestration layers recompose insights and preserve a single narrative." },
     { role: "critic", text: "Recomposition adds latency and may obscure provenance of claims." },
-    { role: "proposer",text: "Measured orchestration delivers better accuracy on complex workflows." },
+    { role: "proposer", text: "Measured orchestration delivers better accuracy on complex workflows." },
     { role: "critic", text: "Only if verification loops are enforced and conflicts are resolved." },
   ];
 
@@ -1115,30 +1078,30 @@ function MemoryReflectionPreview() {
 
   // Memory cluster: 12 circles scattered in a canvas
   const clusterNodes = [
-    { id:0,  x:18, y:22, r:4,  col:"#c8882a", label:"CTX" },
-    { id:1,  x:38, y:14, r:5,  col:"#4aaf7a", label:"MEM" },
-    { id:2,  x:60, y:18, r:3,  col:"#c8a42a", label:"VEC" },
-    { id:3,  x:78, y:28, r:4,  col:"#c85a2a", label:"SRC" },
-    { id:4,  x:12, y:48, r:4,  col:"#7a9abf", label:"LOG" },
-    { id:5,  x:32, y:54, r:7,  col:"#c8882a", label:"SEM" },
-    { id:6,  x:55, y:46, r:4,  col:"#4aaf7a", label:"INF" },
-    { id:7,  x:74, y:52, r:6,  col:"#c8a42a", label:"REF" },
-    { id:8,  x:20, y:74, r:3,  col:"#c85a2a", label:"KNW" },
-    { id:9,  x:44, y:78, r:4,  col:"#c8882a", label:"EPS" },
-    { id:10, x:64, y:72, r:4,  col:"#4aaf7a", label:"AGT" },
-    { id:11, x:84, y:68, r:5,  col:"#7a9abf", label:"OUT" },
+    { id: 0, x: 18, y: 22, r: 4, col: "#c8882a", label: "CTX" },
+    { id: 1, x: 38, y: 14, r: 5, col: "#4aaf7a", label: "MEM" },
+    { id: 2, x: 60, y: 18, r: 3, col: "#c8a42a", label: "VEC" },
+    { id: 3, x: 78, y: 28, r: 4, col: "#c85a2a", label: "SRC" },
+    { id: 4, x: 12, y: 48, r: 4, col: "#7a9abf", label: "LOG" },
+    { id: 5, x: 32, y: 54, r: 7, col: "#c8882a", label: "SEM" },
+    { id: 6, x: 55, y: 46, r: 4, col: "#4aaf7a", label: "INF" },
+    { id: 7, x: 74, y: 52, r: 6, col: "#c8a42a", label: "REF" },
+    { id: 8, x: 20, y: 74, r: 3, col: "#c85a2a", label: "KNW" },
+    { id: 9, x: 44, y: 78, r: 4, col: "#c8882a", label: "EPS" },
+    { id: 10, x: 64, y: 72, r: 4, col: "#4aaf7a", label: "AGT" },
+    { id: 11, x: 84, y: 68, r: 5, col: "#7a9abf", label: "OUT" },
   ];
 
   const reflectionIssues = [
-    { id:"R01", sev:"high",   issue:"Logical loop in reasoning chain #12", improvement:"Inserted circuit-breaker at depth 4", strategy:"Add loop-detection to all agent chains" },
-    { id:"R02", sev:"medium", issue:"Conflicting source vectors detected",  improvement:"Re-weighted embeddings by recency",   strategy:"Periodic vector store deduplication" },
-    { id:"R03", sev:"low",    issue:"Tone inconsistency in response #09",   improvement:"Applied consistency prompt injection", strategy:"Cross-check tone profile pre-output" },
+    { id: "R01", sev: "high", issue: "Logical loop in reasoning chain #12", improvement: "Inserted circuit-breaker at depth 4", strategy: "Add loop-detection to all agent chains" },
+    { id: "R02", sev: "medium", issue: "Conflicting source vectors detected", improvement: "Re-weighted embeddings by recency", strategy: "Periodic vector store deduplication" },
+    { id: "R03", sev: "low", issue: "Tone inconsistency in response #09", improvement: "Applied consistency prompt injection", strategy: "Cross-check tone profile pre-output" },
   ];
 
   const SEV = {
-    high:   { col:"#c85a2a", bg:"rgba(200,90,42,0.08)",   border:"rgba(200,90,42,0.35)",   label:"HGH" },
-    medium: { col:"#c8a42a", bg:"rgba(200,164,42,0.06)",  border:"rgba(200,164,42,0.30)",  label:"MED" },
-    low:    { col:"#4aaf7a", bg:"rgba(74,175,122,0.05)",  border:"rgba(74,175,122,0.28)",  label:"LOW" },
+    high: { col: "#c85a2a", bg: "rgba(200,90,42,0.08)", border: "rgba(200,90,42,0.35)", label: "HGH" },
+    medium: { col: "#c8a42a", bg: "rgba(200,164,42,0.06)", border: "rgba(200,164,42,0.30)", label: "MED" },
+    low: { col: "#4aaf7a", bg: "rgba(74,175,122,0.05)", border: "rgba(74,175,122,0.28)", label: "LOW" },
   };
 
   useEffect(() => {
@@ -1196,35 +1159,35 @@ function MemoryReflectionPreview() {
   const qualScore = 94;
 
   return (
-    <div ref={ref} className="preview-shell" style={{ overflow:"hidden", height:350, padding:"12px", display:"flex", flexDirection:"column", gap:0 }}>
+    <div ref={ref} className="preview-shell" style={{ overflow: "hidden", height: 350, padding: "12px", display: "flex", flexDirection: "column", gap: 0 }}>
       {/* Header */}
-      <div style={{ fontSize:7, color:"var(--primary)", letterSpacing:"0.18em", fontWeight:"bold", textTransform:"uppercase", marginBottom:8, display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}>
+      <div style={{ fontSize: 7, color: "var(--primary)", letterSpacing: "0.18em", fontWeight: "bold", textTransform: "uppercase", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
         <span>MEMORY + REFLECTION UNIT</span>
-        <span style={{ fontSize:6, color:"var(--fg-dim)", fontWeight:"normal" }}>
+        <span style={{ fontSize: 6, color: "var(--fg-dim)", fontWeight: "normal" }}>
           {phase === 0 ? `INDEXING ${collectedCount}/${clusterNodes.length}` : phase === 1 ? "SCORED" : phase === 2 ? `REFLECTING${reflectDots}` : "COMPLETE"}
         </span>
       </div>
 
       {/* Two-column layout */}
-      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, flex:1, minHeight:0 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, flex: 1, minHeight: 0 }}>
 
         {/* ── LEFT: Memory Cluster ── */}
-        <div style={{ border:"1px solid var(--border)", padding:"8px", display:"flex", flexDirection:"column", gap:6, background:"rgba(200,136,42,0.02)", overflow:"hidden" }}>
-          <div style={{ fontSize:6, color:"var(--fg-dim)", letterSpacing:"0.12em", textTransform:"uppercase", flexShrink:0 }}>Memory Cluster</div>
+        <div style={{ border: "1px solid var(--border)", padding: "8px", display: "flex", flexDirection: "column", gap: 6, background: "rgba(200,136,42,0.02)", overflow: "hidden" }}>
+          <div style={{ fontSize: 6, color: "var(--fg-dim)", letterSpacing: "0.12em", textTransform: "uppercase", flexShrink: 0 }}>Memory Cluster</div>
 
           {/* SVG scatter cluster */}
-          <div style={{ flex:1, minHeight:0, position:"relative" }}>
-            <svg viewBox="0 0 100 100" style={{ width:"100%", height:"100%", overflow:"visible" }}>
+          <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
+            <svg viewBox="0 0 100 100" style={{ width: "100%", height: "100%", overflow: "visible" }}>
               {/* Connection lines between collected nodes (spider web) */}
               {clusterNodes.map((a, ai) => ai < collectedCount && clusterNodes.map((b, bi) => {
                 if (bi <= ai || bi >= collectedCount) return null;
-                const dist = Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2);
+                const dist = Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
                 if (dist > 40) return null;
                 return (
                   <line key={`${ai}-${bi}`}
                     x1={a.x} y1={a.y} x2={b.x} y2={b.y}
                     stroke={a.col} strokeWidth={0.4} opacity={0.25}
-                    style={{ transition:"opacity 0.4s" }}
+                    style={{ transition: "opacity 0.4s" }}
                   />
                 );
               }))}
@@ -1240,7 +1203,7 @@ function MemoryReflectionPreview() {
                     {active && (
                       <circle cx={n.x} cy={n.y} r={displayR + 4}
                         fill={n.col} opacity={0.12}
-                        style={{ transition:"all 0.4s cubic-bezier(0.34,1.56,0.64,1)" }}
+                        style={{ transition: "all 0.4s cubic-bezier(0.34,1.56,0.64,1)" }}
                       />
                     )}
                     {/* Node - use opacity transition instead of fill/stroke to avoid transparency issues */}
@@ -1249,13 +1212,13 @@ function MemoryReflectionPreview() {
                       stroke={n.col}
                       strokeWidth={0.8}
                       opacity={active ? 0.9 : 0.2}
-                      style={{ transition:"all 0.4s cubic-bezier(0.34,1.56,0.64,1)" }}
+                      style={{ transition: "all 0.4s cubic-bezier(0.34,1.56,0.64,1)" }}
                     />
                     {active && (
                       <text x={n.x} y={n.y + 2.2} textAnchor="middle"
                         fontSize={displayR > 9 ? 4 : 3.5} fontWeight="700"
                         fill="#fff" fontFamily="JetBrains Mono,monospace"
-                        style={{ transition:"all 0.3s", pointerEvents:"none" }}>
+                        style={{ transition: "all 0.3s", pointerEvents: "none" }}>
                         {n.label}
                       </text>
                     )}
@@ -1266,30 +1229,30 @@ function MemoryReflectionPreview() {
           </div>
 
           {/* Progress bar */}
-          <div style={{ flexShrink:0 }}>
-            <div style={{ height:3, background:"var(--border)", borderRadius:2, overflow:"hidden", marginBottom:4 }}>
-              <div style={{ width:`${(collectedCount / clusterNodes.length) * 100}%`, height:"100%", background:"var(--primary)", transition:"width 0.3s ease" }} />
+          <div style={{ flexShrink: 0 }}>
+            <div style={{ height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden", marginBottom: 4 }}>
+              <div style={{ width: `${(collectedCount / clusterNodes.length) * 100}%`, height: "100%", background: "var(--primary)", transition: "width 0.3s ease" }} />
             </div>
 
             {/* Avg Similarity + Quality scores — fade in at phase >= 1 */}
-            <div style={{ opacity: phase >= 1 ? 1 : 0, transition:"opacity 0.6s ease" }}>
-              <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+            <div style={{ opacity: phase >= 1 ? 1 : 0, transition: "opacity 0.6s ease" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 <div>
-                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:2 }}>
-                    <span style={{ fontSize:5.5, color:"var(--fg-dim)", letterSpacing:"0.1em", textTransform:"uppercase" }}>Avg Similarity</span>
-                    <span style={{ fontSize:5.5, color:"var(--primary)", fontWeight:"700" }}>{avgSim}%</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                    <span style={{ fontSize: 5.5, color: "var(--fg-dim)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Avg Similarity</span>
+                    <span style={{ fontSize: 5.5, color: "var(--primary)", fontWeight: "700" }}>{avgSim}%</span>
                   </div>
-                  <div style={{ height:3, background:"var(--border)", borderRadius:2, overflow:"hidden" }}>
-                    <div style={{ width: phase >= 1 ? `${avgSim}%` : "0%", height:"100%", background:"var(--primary)", transition:"width 0.8s ease 0.2s" }} />
+                  <div style={{ height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: phase >= 1 ? `${avgSim}%` : "0%", height: "100%", background: "var(--primary)", transition: "width 0.8s ease 0.2s" }} />
                   </div>
                 </div>
                 <div>
-                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:2 }}>
-                    <span style={{ fontSize:5.5, color:"var(--fg-dim)", letterSpacing:"0.1em", textTransform:"uppercase" }}>Quality Score</span>
-                    <span style={{ fontSize:5.5, color:"#4aaf7a", fontWeight:"700" }}>{qualScore}%</span>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
+                    <span style={{ fontSize: 5.5, color: "var(--fg-dim)", letterSpacing: "0.1em", textTransform: "uppercase" }}>Quality Score</span>
+                    <span style={{ fontSize: 5.5, color: "#4aaf7a", fontWeight: "700" }}>{qualScore}%</span>
                   </div>
-                  <div style={{ height:3, background:"var(--border)", borderRadius:2, overflow:"hidden" }}>
-                    <div style={{ width: phase >= 1 ? `${qualScore}%` : "0%", height:"100%", background:"#4aaf7a", transition:"width 0.8s ease 0.4s" }} />
+                  <div style={{ height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: phase >= 1 ? `${qualScore}%` : "0%", height: "100%", background: "#4aaf7a", transition: "width 0.8s ease 0.4s" }} />
                   </div>
                 </div>
               </div>
@@ -1298,32 +1261,32 @@ function MemoryReflectionPreview() {
         </div>
 
         {/* ── RIGHT: Reflection ── */}
-        <div style={{ border:"1px solid var(--border)", padding:"8px", display:"flex", flexDirection:"column", gap:6, overflow:"hidden" }}>
-          <div style={{ fontSize:6, color:"var(--fg-dim)", letterSpacing:"0.12em", textTransform:"uppercase", flexShrink:0, display:"flex", alignItems:"center", gap:5 }}>
-            {phase >= 2 && <span style={{ width:5, height:5, borderRadius:"50%", background:"var(--primary)", display:"inline-block", animation: phase === 2 ? "pulse 1s infinite" : "none" }} />}
+        <div style={{ border: "1px solid var(--border)", padding: "8px", display: "flex", flexDirection: "column", gap: 6, overflow: "hidden" }}>
+          <div style={{ fontSize: 6, color: "var(--fg-dim)", letterSpacing: "0.12em", textTransform: "uppercase", flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
+            {phase >= 2 && <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--primary)", display: "inline-block", animation: phase === 2 ? "pulse 1s infinite" : "none" }} />}
             Reflection Engine
           </div>
 
           {/* Phase 2: searching bar */}
           {phase <= 2 && (
-            <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center", gap:8 }}>
-              <div style={{ fontSize:7, color: phase >= 2 ? "var(--primary)" : "var(--fg-dim)", letterSpacing:"0.08em", textAlign:"center", transition:"color 0.3s" }}>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", gap: 8 }}>
+              <div style={{ fontSize: 7, color: phase >= 2 ? "var(--primary)" : "var(--fg-dim)", letterSpacing: "0.08em", textAlign: "center", transition: "color 0.3s" }}>
                 {phase < 2 ? "Awaiting memory index..." : `Searching for issues${reflectDots}`}
               </div>
-              <div style={{ height:3, background:"var(--border)", borderRadius:2, overflow:"hidden" }}>
+              <div style={{ height: 3, background: "var(--border)", borderRadius: 2, overflow: "hidden" }}>
                 <div style={{
                   width: phase < 2 ? "0%" : `${reflectProgress}%`,
-                  height:"100%",
+                  height: "100%",
                   background: reflectProgress === 100 ? "#4aaf7a" : "var(--primary)",
-                  transition:"width 0.1s linear, background 0.4s ease",
+                  transition: "width 0.1s linear, background 0.4s ease",
                 }} />
               </div>
               {phase >= 2 && (
-                <div style={{ display:"flex", flexDirection:"column", gap:3 }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                   {["Scanning reasoning chains...", "Cross-referencing sources...", "Evaluating tone consistency..."].map((s, i) => (
-                    <div key={i} style={{ display:"flex", alignItems:"center", gap:5, opacity: reflectProgress >= (i+1)*30 ? 1 : 0.25, transition:"opacity 0.3s" }}>
-                      <div style={{ width:4, height:4, borderRadius:"50%", background: reflectProgress >= (i+1)*30 ? "#4aaf7a" : "var(--border)", flexShrink:0, transition:"background 0.3s" }} />
-                      <span style={{ fontSize:6, color:"var(--muted)", letterSpacing:"0.05em" }}>{s}</span>
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 5, opacity: reflectProgress >= (i + 1) * 30 ? 1 : 0.25, transition: "opacity 0.3s" }}>
+                      <div style={{ width: 4, height: 4, borderRadius: "50%", background: reflectProgress >= (i + 1) * 30 ? "#4aaf7a" : "var(--border)", flexShrink: 0, transition: "background 0.3s" }} />
+                      <span style={{ fontSize: 6, color: "var(--muted)", letterSpacing: "0.05em" }}>{s}</span>
                     </div>
                   ))}
                 </div>
@@ -1333,30 +1296,30 @@ function MemoryReflectionPreview() {
 
           {/* Phase 3: structured report */}
           {showReport && (
-            <div style={{ flex:1, overflow:"auto", display:"flex", flexDirection:"column", gap:4, animation:"fadeIn 0.4s ease" }}>
+            <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", gap: 4, animation: "fadeIn 0.4s ease" }}>
               {reflectionIssues.map((issue) => {
                 const s = SEV[issue.sev];
                 return (
-                  <div key={issue.id} style={{ border:`1px solid ${s.border}`, background:s.bg, overflow:"hidden", flexShrink:0 }}>
+                  <div key={issue.id} style={{ border: `1px solid ${s.border}`, background: s.bg, overflow: "hidden", flexShrink: 0 }}>
                     {/* Issue header */}
-                    <div style={{ display:"flex", alignItems:"center", gap:5, padding:"3px 6px", borderBottom:`1px solid ${s.border}`, background:`${s.bg}` }}>
-                      <span style={{ fontSize:5.5, fontWeight:"700", letterSpacing:"0.12em", color:s.col, border:`1px solid ${s.border}`, padding:"1px 4px", textTransform:"uppercase" }}>{s.label}</span>
-                      <span style={{ fontSize:5.5, color:"var(--fg-dim)", letterSpacing:"0.08em" }}>{issue.id}</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 6px", borderBottom: `1px solid ${s.border}`, background: `${s.bg}` }}>
+                      <span style={{ fontSize: 5.5, fontWeight: "700", letterSpacing: "0.12em", color: s.col, border: `1px solid ${s.border}`, padding: "1px 4px", textTransform: "uppercase" }}>{s.label}</span>
+                      <span style={{ fontSize: 5.5, color: "var(--fg-dim)", letterSpacing: "0.08em" }}>{issue.id}</span>
                     </div>
                     {/* Issue body */}
-                    <div style={{ padding:"4px 6px", display:"flex", flexDirection:"column", gap:3 }}>
+                    <div style={{ padding: "4px 6px", display: "flex", flexDirection: "column", gap: 3 }}>
                       <div>
-                        <div style={{ fontSize:5, color:"var(--fg-dim)", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:1, opacity:0.6 }}>Issue</div>
-                        <div style={{ fontSize:6.5, color:"var(--fg)", lineHeight:1.4 }}>{issue.issue}</div>
+                        <div style={{ fontSize: 5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 1, opacity: 0.6 }}>Issue</div>
+                        <div style={{ fontSize: 6.5, color: "var(--fg)", lineHeight: 1.4 }}>{issue.issue}</div>
                       </div>
-                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4, borderTop:`1px solid ${s.border}`, paddingTop:3 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4, borderTop: `1px solid ${s.border}`, paddingTop: 3 }}>
                         <div>
-                          <div style={{ fontSize:5, color:"var(--fg-dim)", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:1, opacity:0.6 }}>Fix Applied</div>
-                          <div style={{ fontSize:6, color:"var(--muted)", lineHeight:1.4 }}>{issue.improvement}</div>
+                          <div style={{ fontSize: 5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 1, opacity: 0.6 }}>Fix Applied</div>
+                          <div style={{ fontSize: 6, color: "var(--muted)", lineHeight: 1.4 }}>{issue.improvement}</div>
                         </div>
                         <div>
-                          <div style={{ fontSize:5, color:"var(--fg-dim)", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:1, opacity:0.6 }}>Strategy</div>
-                          <div style={{ fontSize:6, color:"var(--muted)", lineHeight:1.4 }}>{issue.strategy}</div>
+                          <div style={{ fontSize: 5, color: "var(--fg-dim)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 1, opacity: 0.6 }}>Strategy</div>
+                          <div style={{ fontSize: 6, color: "var(--muted)", lineHeight: 1.4 }}>{issue.strategy}</div>
                         </div>
                       </div>
                     </div>
@@ -1903,7 +1866,7 @@ export default function Landing({ onEnterApp }) {
                   onMouseEnter={e => { e.currentTarget.style.background = "rgba(200,136,42,0.2)"; e.currentTarget.style.boxShadow = "0 0 28px -8px var(--primary-glow)"; }}
                   onMouseLeave={e => { e.currentTarget.style.background = "rgba(200,136,42,0.1)"; e.currentTarget.style.boxShadow = "none"; }}
                 >
-                  >_ Initialize Session
+                  &gt;_ Initialize Session
                 </button>
                 <button style={S.secondaryBtn}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(200,136,42,0.4)"; }}
@@ -2007,9 +1970,9 @@ export default function Landing({ onEnterApp }) {
                 </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {[["Researcher", "var(--chart-1)", "Gathers facts, explores topic depth comprehensively"],
-                    ["Analyst", "var(--chart-2)", "Identifies patterns, data-driven evaluations"],
-                    ["Writer", "var(--chart-3)", "Structures and articulates the output clearly"],
-                    ["Critic", "var(--chart-4)", "Flags logical gaps and suggests improvements"]].map(([a, col, d]) => (
+                  ["Analyst", "var(--chart-2)", "Identifies patterns, data-driven evaluations"],
+                  ["Writer", "var(--chart-3)", "Structures and articulates the output clearly"],
+                  ["Critic", "var(--chart-4)", "Flags logical gaps and suggests improvements"]].map(([a, col, d]) => (
                     <div key={a} style={{ display: "flex", gap: 12, border: "1px solid var(--border)", background: "var(--card)", padding: "12px 14px", alignItems: "flex-start", transition: "all 0.3s" }}
                       onMouseEnter={e => { e.currentTarget.style.borderColor = `${col}60`; }}
                       onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; }}
@@ -2075,12 +2038,12 @@ export default function Landing({ onEnterApp }) {
           <RevealSection>
             <div style={{ border: "1px solid var(--border)", background: "var(--card)", overflow: "hidden" }}>
               {[["Feature", "Standard", "Multi-Agent", "Deep Research"],
-                ["Tool Calling", <CheckCircle2 size={12} style={{ color: "var(--chart-1)" }} />, <CheckCircle2 size={12} style={{ color: "var(--chart-2)" }} />, <CheckCircle2 size={12} style={{ color: "var(--chart-3)" }} />],
-                ["Orchestration", "—", <CheckCircle2 size={12} style={{ color: "var(--chart-2)" }} />, <CheckCircle2 size={12} style={{ color: "var(--chart-3)" }} />],
-                ["Task Decomposition", "—", <CheckCircle2 size={12} style={{ color: "var(--chart-2)" }} />, <CheckCircle2 size={12} style={{ color: "var(--chart-3)" }} />],
-                ["Verification Chains", "—", "—", <CheckCircle2 size={12} style={{ color: "var(--chart-3)" }} />],
-                ["Source Citation", "—", "—", <CheckCircle2 size={12} style={{ color: "var(--chart-3)" }} />],
-                ["Reasoning Depth", "2", "4", "6"]].map((row, ri) => (
+              ["Tool Calling", <CheckCircle2 size={12} style={{ color: "var(--chart-1)" }} />, <CheckCircle2 size={12} style={{ color: "var(--chart-2)" }} />, <CheckCircle2 size={12} style={{ color: "var(--chart-3)" }} />],
+              ["Orchestration", "—", <CheckCircle2 size={12} style={{ color: "var(--chart-2)" }} />, <CheckCircle2 size={12} style={{ color: "var(--chart-3)" }} />],
+              ["Task Decomposition", "—", <CheckCircle2 size={12} style={{ color: "var(--chart-2)" }} />, <CheckCircle2 size={12} style={{ color: "var(--chart-3)" }} />],
+              ["Verification Chains", "—", "—", <CheckCircle2 size={12} style={{ color: "var(--chart-3)" }} />],
+              ["Source Citation", "—", "—", <CheckCircle2 size={12} style={{ color: "var(--chart-3)" }} />],
+              ["Reasoning Depth", "2", "4", "6"]].map((row, ri) => (
                 <div key={ri} style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", borderBottom: ri < 6 ? "1px solid var(--border)" : "none", background: ri === 0 ? "rgba(200,136,42,0.04)" : "transparent", transition: "background 0.2s" }}
                   onMouseEnter={e => { if (ri > 0) e.currentTarget.style.background = "rgba(200,136,42,0.02)"; }}
                   onMouseLeave={e => { if (ri > 0) e.currentTarget.style.background = "transparent"; }}
@@ -2096,7 +2059,7 @@ export default function Landing({ onEnterApp }) {
           </RevealSection>
         </section>
 
-        
+
 
         {/* === HOW OUR AI THINKS AND BUILDS === */}
         <section style={{ ...S.section, borderTop: "1px solid var(--border)" }}>
@@ -2115,7 +2078,7 @@ export default function Landing({ onEnterApp }) {
             <ThinkingPipeline />
           </RevealSection>
         </section>
-{/* ═══ PERFORMANCE METRICS ═══ */}
+        {/* ═══ PERFORMANCE METRICS ═══ */}
         <section style={{ ...S.section, borderTop: "1px solid var(--border)" }}>
           <RevealSection>
             <div style={S.sectionHeader}>
