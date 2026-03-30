@@ -43,6 +43,8 @@ export default function ChatPage() {
     upsertGraphNode,
     createChat,
     clearGraphData,
+    conversationId,
+    setConversationId,
   } = useAppStore();
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -224,7 +226,11 @@ export default function ChatPage() {
       if (query) {
         // Only proceed with LLM generation if we have a query
         if (selectedMode === "standard") {
-          const result = await callChatApi(query);
+          const result = await callChatApi(query, conversationId);
+          // Save returned conversation_id for future messages
+          if (result.conversation_id) {
+            setConversationId(result.conversation_id);
+          }
           updateChatMessage(assistantId, {
             content: result.content,
             meta: result.meta,
@@ -293,8 +299,14 @@ export default function ChatPage() {
                   content: content,
                 });
               }
-            }
+            },
+            conversationId
           );
+
+          // Update conversation ID if returned
+          if (result.conversation_id) {
+            setConversationId(result.conversation_id);
+          }
 
           // For deep_research path, build graph from orchestratorRaw
           if (result.orchestratorRaw && result.orchestratorRaw.subtasks) {
@@ -313,9 +325,21 @@ export default function ChatPage() {
           setGraphNodes([]);
           setGraphEdges([]);
 
-          const result = await generateResponse(query, selectedMode, (indicator) => {
-            updateChatMessage(assistantId, { processingIndicator: indicator });
-          });
+          const result = await generateResponse(
+            query, 
+            selectedMode, 
+            (indicator) => {
+              updateChatMessage(assistantId, { processingIndicator: indicator });
+            },
+            undefined,
+            undefined,
+            conversationId
+          );
+
+          // Update conversation ID if returned
+          if (result.conversation_id) {
+            setConversationId(result.conversation_id);
+          }
 
           // Build graph from orchestrator data if available
           if (result.orchestratorRaw) {

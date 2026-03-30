@@ -20,6 +20,7 @@ export default function DebatePage() {
   const [resolution, setResolution] = useState<"pending" | "ongoing" | "resolved">("pending");
   const [chatInput, setChatInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [debateConversationId, setDebateConversationId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,10 +37,12 @@ export default function DebatePage() {
     setError(null);
 
     try {
-      for await (const msg of streamDebate(topic, rounds)) {
+      for await (const msg of streamDebate(topic, rounds, debateConversationId)) {
         if (msg.type === "done") break;
 
-        if (msg.type === "round") {
+        if ((msg as any).type === "conversation_id") {
+          setDebateConversationId((msg as any).conversation_id);
+        } else if (msg.type === "round") {
           setRound(msg.round ?? 0);
           setTotalRounds(msg.total_rounds ?? rounds);
         } else if (msg.type === "message") {
@@ -50,6 +53,7 @@ export default function DebatePage() {
             content: msg.content ?? "",
             round: msg.round,
             timestamp: new Date(),
+            conversationId: (msg as any).conversation_id || debateConversationId || undefined,
           });
           // Count when both agents have spoken in a round as potential contradiction
           if (role === "critic") {

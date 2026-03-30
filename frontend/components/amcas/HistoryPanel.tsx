@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getHistory, renameConversation, deleteConversation, clearAllHistory, HistoryConversation } from "@/lib/api";
+import { getHistory, getConversationMessages, renameConversation, deleteConversation, clearAllHistory, HistoryConversation, HistoryMessage } from "@/lib/api";
 import { useAppStore } from "@/lib/store";
 import { X, MessageSquare, Clock, Trash2, Loader2, Edit2, Check, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -12,14 +12,14 @@ interface HistoryPanelProps {
   onClose: () => void;
 }
 
-export default function HistoryPanel({ isOpen, onClose }: HistoryPanelProps) {
+export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelProps>) {
   const [conversations, setConversations] = useState<HistoryConversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const navigate = useNavigate();
-  const { setCurrentChat } = useAppStore();
+  const { setCurrentChat, clearChatMessages, addChatMessage, setConversationId } = useAppStore();
 
   useEffect(() => {
     if (isOpen) {
@@ -40,13 +40,51 @@ export default function HistoryPanel({ isOpen, onClose }: HistoryPanelProps) {
     }
   }
 
-  const handleSelectConversation = (conv: HistoryConversation) => {
-    // Load messages into the appropriate page
+  const handleSelectConversation = async (conv: HistoryConversation) => {
     if (conv.type === "debate") {
       navigate("/debate");
     } else {
-      // Load messages into chat store
-      setCurrentChat(null); // Clear current local chat
+      try {
+        // Fetch messages from backend
+        const data = await getConversationMessages(conv.id);
+        // Clear current chat and populate with fetched messages
+        clearChatMessages();
+        setConversationId(conv.id);
+        // Convert backend messages to frontend ChatMessage format
+        for (const msg of data.messages) {
+          for (const entry of msg.content) {
+            if (entry.user) {
+              addChatMessage({
+                id: `${msg.id}-user`,
+                role: "user",
+                content: entry.user,
+                mode: "standard",
+                timestamp: new Date(msg.created_at),
+                conversationId: conv.id,
+              });
+            }
+            if (entry.assistant) {
+              addChatMessage({
+                id: `${msg.id}-assistant`,
+                role: "assistant",
+                content: entry.assistant,
+                mode: "standard",
+                timestamp: new Date(msg.created_at),
+                conversationId: conv.id,
+                meta: msg.confidence != null ? {
+                  confidenceScore: Math.round(msg.confidence * 100),
+                  reasoningDepth: 2,
+                  retryCount: 0,
+                  toolsUsed: [],
+                } : undefined,
+              });
+            }
+          }
+        }
+      } catch (err: any) {
+        console.error("Failed to load conversation:", err);
+        alert("Failed to load conversation messages");
+      }
       navigate("/chat");
     }
     onClose();
@@ -230,7 +268,7 @@ export default function HistoryPanel({ isOpen, onClose }: HistoryPanelProps) {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      {/* Title & type */}
+                      {/* Title, type & Actions */}
                       <div className="flex items-center gap-2 mb-1">
                         {editingId === conv.id ? (
                           <div className="flex items-center gap-1 flex-1" role="region" onClick={(e) => e.stopPropagation()}>
@@ -265,9 +303,30 @@ export default function HistoryPanel({ isOpen, onClose }: HistoryPanelProps) {
                             <span className="text-xs font-mono font-bold text-foreground truncate flex-1">
                               {conv.title}
                             </span>
-                            <span className={cn("text-[9px] font-mono uppercase tracking-wider shrink-0", getTypeColor(conv.type))}>
-                              {conv.type}
-                            </span>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className={cn("text-[9px] font-mono uppercase tracking-wider", getTypeColor(conv.type))}>
+                                {conv.type}
+                              </span>
+                              {/* Actions nested here for vertical centering with title */}
+                              <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={(e) => startEditing(e, conv)}
+                                  title="Rename"
+                                  className="flex items-center justify-center w-7 h-7 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                                  type="button"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={(e) => handleDelete(e, conv.id)}
+                                  title="Delete"
+                                  className="flex items-center justify-center w-7 h-7 text-destructive/70 hover:bg-destructive/10 transition-colors"
+                                  type="button"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
                           </>
                         )}
                       </div>
@@ -288,26 +347,6 @@ export default function HistoryPanel({ isOpen, onClose }: HistoryPanelProps) {
                           <span>Confidence: {Math.round(conv.messages[0].confidence * 100)}%</span>
                         )}
                       </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={(e) => startEditing(e, conv)}
-                        title="Rename"
-                        className="flex items-center justify-center w-8 h-8 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                        type="button"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={(e) => handleDelete(e, conv.id)}
-                        title="Delete"
-                        className="flex items-center justify-center w-8 h-8 text-destructive/70 hover:bg-destructive/10 transition-colors"
-                        type="button"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
                     </div>
                   </div>
                 </button>

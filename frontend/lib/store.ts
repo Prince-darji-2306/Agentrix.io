@@ -21,6 +21,7 @@ export interface ChatMessage {
     logicalConsistency?: number;
     criticFeedback?: string;
   };
+  conversationId?: string; // Backend conversation_id for this message pair
 }
 
 export interface ChatSession {
@@ -31,6 +32,7 @@ export interface ChatSession {
   mode: ChatMode;
   createdAt: Date;
   updatedAt: Date;
+  backendConversationId?: string; // UUID from backend
 }
 
 export interface DebateMessage {
@@ -39,6 +41,7 @@ export interface DebateMessage {
   content: string;
   round?: number;
   timestamp: Date;
+  conversationId?: string; // Backend conversation_id
 }
 
 export type GraphNodeType = "orchestrator" | "agent" | "critic" | "output" | "planner" | "coder" | "aggregator" | "reviewer";
@@ -91,10 +94,13 @@ interface AppState {
   createChat: () => void;
   deleteChat: (id: string) => void;
   setCurrentChat: (id: string | null) => void;
-  updateChatSession: (id: string, updates: Partial<Pick<ChatSession, 'title' | 'description'>>) => void;
+  updateChatSession: (id: string, updates: Partial<Pick<ChatSession, 'title' | 'description' | 'backendConversationId'>>) => void;
   clearAllChats: () => void;
   isHistoryOpen: boolean;
   setIsHistoryOpen: (v: boolean) => void;
+  // Backend conversation tracking
+  conversationId: string | null;
+  setConversationId: (id: string | null) => void;
   // Auth state
   userId: string | null;
   userDisplayName: string | null;
@@ -144,6 +150,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           mode: s.selectedMode,
           createdAt: now,
           updatedAt: now,
+          backendConversationId: s.conversationId || undefined,
         };
         const updatedSessions = [...s.chatSessions, newSession];
         try {
@@ -158,7 +165,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (s.currentChatId) {
         const updatedSessions = s.chatSessions.map((session) =>
           session.id === s.currentChatId
-            ? { ...session, messages: newChatMessages, updatedAt: new Date() }
+            ? { 
+                ...session, 
+                messages: newChatMessages, 
+                updatedAt: new Date(),
+                backendConversationId: session.backendConversationId || s.conversationId || undefined
+              }
             : session
         );
         try {
@@ -232,7 +244,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       updatedAt: now,
     };
     const updated = [...chatSessions, newSession];
-    set({ chatSessions: updated, currentChatId: id, chatMessages: [] });
+    set({ chatSessions: updated, currentChatId: id, chatMessages: [], conversationId: null });
     try {
       localStorage.setItem("agentrix_chat_history", JSON.stringify(updated));
     } catch (e) {
@@ -249,13 +261,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
       const newCurrentId = state.currentChatId === id ? null : state.currentChatId;
       const newMessages = state.currentChatId === id ? [] : state.chatMessages;
-      return { chatSessions: updated, currentChatId: newCurrentId, chatMessages: newMessages };
+      const newConvId = state.currentChatId === id ? null : state.conversationId;
+      return { chatSessions: updated, currentChatId: newCurrentId, chatMessages: newMessages, conversationId: newConvId };
     });
   },
   setCurrentChat: (id) => {
     const { chatSessions } = get();
     if (id === null) {
-      set({ currentChatId: null, chatMessages: [], selectedMode: "standard" });
+      set({ currentChatId: null, chatMessages: [], selectedMode: "standard", conversationId: null });
       return;
     }
     const session = chatSessions.find((s) => s.id === id);
@@ -264,6 +277,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         currentChatId: id,
         chatMessages: session.messages,
         selectedMode: session.mode,
+        conversationId: session.backendConversationId || null,
       });
     }
   },
@@ -290,6 +304,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   isHistoryOpen: false,
   setIsHistoryOpen: (v) => set({ isHistoryOpen: v }),
+  // Backend conversation tracking
+  conversationId: null,
+  setConversationId: (id) => set({ conversationId: id }),
   // Auth state
   userId: typeof window !== "undefined" ? localStorage.getItem("agentrix_user_id") : null,
   userDisplayName: typeof window !== "undefined" ? localStorage.getItem("agentrix_display_name") : null,

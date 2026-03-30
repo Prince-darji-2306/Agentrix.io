@@ -106,6 +106,17 @@ export async function deleteConversation(conversationId: string): Promise<void> 
   }
 }
 
+export async function getConversationMessages(conversationId: string): Promise<HistoryConversation> {
+  const res = await fetch(`${API_BASE}/history/${conversationId}`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    const error = await res.text();
+    throw new Error(`Conversation API error: ${res.status} - ${error}`);
+  }
+  return res.json();
+}
+
 export async function clearAllHistory(): Promise<{ deleted: number }> {
   const res = await fetch(`${API_BASE}/history`, {
     method: "DELETE",
@@ -200,6 +211,7 @@ export interface ChatResult {
     critic_logical_consistency?: number;
     critic_feedback?: string;
   }; // only present when orchestrator was used
+  conversation_id?: string;
 }
 
 // ─── Smart Orchestrator (SSE) ────────────────────────────────────────────────
@@ -207,7 +219,7 @@ export interface ChatResult {
 export type SmartOrchestratorPath = "standard" | "deep_research" | "code";
 
 export interface SmartSSEEvent {
-  type: "route" | "stage" | "node_update" | "chunk" | "plan" | "code_section" | "final" | "done" | "error";
+  type: "route" | "stage" | "node_update" | "chunk" | "plan" | "code_section" | "final" | "done" | "error" | "conversation_id";
   path?: SmartOrchestratorPath;
   reason?: string;
   stage?: string;
@@ -223,6 +235,7 @@ export interface SmartSSEEvent {
   subtasks?: Array<{ id: number; description: string; agent_type?: string; signatures?: string[] }>;
   section?: "problem_understanding" | "approach" | "code";
   result?: string;
+  conversation_id?: string;
   meta?: {
     confidence_score: number;
     logical_consistency: number;
@@ -236,11 +249,14 @@ export interface SmartSSEEvent {
 // ─── Standard Chat ────────────────────────────────────────────────────────────
 
 // Non-streaming chat call - matches backend /chat JSON response
-export async function callChatApiNonStreaming(query: string): Promise<ChatResult> {
+export async function callChatApiNonStreaming(query: string, conversationId?: string | null): Promise<ChatResult & { conversation_id?: string }> {
+  const body: Record<string, unknown> = { query };
+  if (conversationId) body.conversation_id = conversationId;
+
   const res = await fetch(`${API_BASE}/chat`, {
     method: "POST",
     headers: getAuthHeaders(),
-    body: JSON.stringify({ query }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -259,22 +275,27 @@ export async function callChatApiNonStreaming(query: string): Promise<ChatResult
       retryCount: 0,
       toolsUsed: result.tools_used?.map((t) => t.tool) ?? [],
     },
+    conversation_id: data.conversation_id,
   };
 }
 
-export async function callChatApi(query: string): Promise<ChatResult> {
+export async function callChatApi(query: string, conversationId?: string | null): Promise<ChatResult & { conversation_id?: string }> {
   // Use non-streaming version to match backend
-  return await callChatApiNonStreaming(query);
+  return await callChatApiNonStreaming(query, conversationId);
 }
 
 export async function callOrchestratorApi(
   task: string,
-  onLog: (log: string) => void
+  onLog: (log: string) => void,
+  conversationId?: string | null
 ): Promise<ChatResult & { orchestratorRaw?: OrchestratorApiResponse }> {
+  const body: Record<string, unknown> = { task };
+  if (conversationId) body.conversation_id = conversationId;
+
   const res = await fetch(`${API_BASE}/orchestrator/task`, {
     method: "POST",
     headers: getAuthHeaders(),
-    body: JSON.stringify({ task }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
@@ -282,7 +303,7 @@ export async function callOrchestratorApi(
     throw new Error(`Orchestrator API error: ${res.status} – ${error}`);
   }
 
-  const data: { result: OrchestratorApiResponse } = await res.json();
+  const data: { result: OrchestratorApiResponse; conversation_id?: string } = await res.json();
   const r = data.result;
 
   // Emit logs so the UI can show progress
@@ -311,6 +332,7 @@ export async function callOrchestratorApi(
       criticFeedback: r.critic_feedback,
     },
     orchestratorRaw: { ...r }, // include raw data for graph visualization
+    conversation_id: data.conversation_id,
   };
 }
 
@@ -318,9 +340,12 @@ export async function callOrchestratorApi(
 
 export async function* streamDebate(
   topic: string,
-  rounds: number = 3
+  rounds: number = 3,
+  conversationId?: string | null
 ): AsyncGenerator<DebateMessage> {
-  const url = `${API_BASE}/debate/stream?topic=${encodeURIComponent(topic)}&rounds=${rounds}`;
+  let url = `${API_BASE}/debate/stream?topic=${encodeURIComponent(topic)}&rounds=${rounds}`;
+  if (conversationId) url += `&conversation_id=${encodeURIComponent(conversationId)}`;
+
   const res = await fetch(url, {
     headers: getAuthHeaders(),
   });
@@ -359,11 +384,14 @@ export async function* streamDebate(
 
 // ─── Smart Orchestrator Stream ───────────────────────────────────────────────
 
-export async function* callSmartOrchestratorStream(task: string): AsyncGenerator<SmartSSEEvent> {
+export async function* callSmartOrchestratorStream(task: string, conversationId?: string | null): AsyncGenerator<SmartSSEEvent> {
+  const body: Record<string, unknown> = { task };
+  if (conversationId) body.conversation_id = conversationId;
+
   const res = await fetch(`${API_BASE}/smart-orchestrator/stream`, {
     method: "POST",
     headers: getAuthHeaders(),
-    body: JSON.stringify({ task }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok || !res.body) {
@@ -431,10 +459,11 @@ export async function generateResponse(
   onIndicator: (indicator: string) => void,
   onNodeUpdate?: (event: SmartSSEEvent) => void,
   onContentChunk?: (section: string, content: string) => void,
+  conversationId?: string | null,
 ): Promise<ChatResult> {
   if (mode === "standard") {
     onIndicator("Analyzing input…");
-    const result = await callChatApi(prompt);
+    const result = await callChatApi(prompt, conversationId);
     onIndicator("");
     return result;
   }
@@ -452,6 +481,7 @@ export async function generateResponse(
     let orchestratorRaw: OrchestratorApiResponse | undefined;
     let detectedPath: string | null = null;
     let codeContent = "";
+    let backendConversationId: string | undefined;
 
     // Deep research thinking indicators
     const deepResearchIndicators = [
@@ -466,8 +496,11 @@ export async function generateResponse(
     let indicatorInterval: ReturnType<typeof setInterval> | null = null;
 
     try {
-      for await (const event of callSmartOrchestratorStream(prompt)) {
+      for await (const event of callSmartOrchestratorStream(prompt, conversationId)) {
         switch (event.type) {
+          case "conversation_id":
+            backendConversationId = event.conversation_id;
+            break;
           case "route":
             detectedPath = event.path || null;
             if (onNodeUpdate) onNodeUpdate(event);
@@ -545,6 +578,7 @@ export async function generateResponse(
       content: finalResult,
       meta: finalMeta,
       orchestratorRaw,
+      conversation_id: backendConversationId,
     };
   }
 
@@ -566,7 +600,7 @@ export async function generateResponse(
   }, 1500);
 
   try {
-    let result = await callOrchestratorApi(prompt, (log) => onIndicator(log));
+    let result = await callOrchestratorApi(prompt, (log) => onIndicator(log), conversationId);
     if (result.orchestratorRaw) {
       result = {
         ...result,
