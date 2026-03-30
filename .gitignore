@@ -3,6 +3,12 @@ backend/__pycache__
 backend/schemas/__pycache__
 backend/utils/__pycache__
 backend/chroma_storage
+backend/agents/__pycache__
+backend/agent_manager/__pycache__
+backend/services/__pycache__
+backend/core/__pycache__
+backend/repositories/__pycache__
+backend/routers/__pycache__
 CLUADE.md
 temp.py
 temp2.py
