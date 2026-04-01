@@ -27,9 +27,9 @@ import {
 const DARK_VARS = `
   --bg: #0f0d0b; --card: #161310; --border: #2a2420;
   --primary: #c8882a; --primary-dim: rgba(200,136,42,0.12); --primary-glow: rgba(200,136,42,0.18);
-  --muted: #5a4e40; --muted-fg: #3d3228; --fg: #e8c97a; --fg-dim: #7a6a52;
+  --muted: #a09080; --muted-fg: #3d3228; --fg: #e8c97a; --fg-dim: #c0b0a0;
   --chart-1: #c8882a; --chart-2: #4aaf7a; --chart-3: #c8a42a; --chart-4: #c85a2a;
-  --scanline: rgba(232,201,122,0.022); --glow: rgba(200,136,42,0.15);
+  --scanline: rgba(232,201,122,0.015); --glow: rgba(200,136,42,0.25);
   --secondary: #1a1612; --secondary-fg: #8a7a62;
 `;
 const LIGHT_VARS = `
@@ -1394,14 +1394,14 @@ function ThinkingPipeline() {
   const [typed, setTyped] = useState("");
 
   const nodes = [
-    { id: "prompt", label: "User Prompt", desc: "Example query appears", x: 5, y: 50, color: "var(--primary)", activeBg: "rgba(255,255,255,0.95)" },
-    { id: "reason", label: "Reasoning Engine", desc: "Plans and decomposes tasks", x: 20, y: 50, color: "var(--chart-1)", activeBg: "rgba(255,255,255,0.95)" },
-    { id: "collab", label: "Multi-Agent Collaboration", desc: "Agents exchange messages", x: 42, y: 13, color: "var(--chart-2)", activeBg: "rgba(255,255,255,0.95)" },
-    { id: "research", label: "Deep Research", desc: "Retrieves and verifies sources", x: 42, y: 50, color: "var(--chart-3)", activeBg: "rgba(255,255,255,0.95)" },
-    { id: "debate", label: "Debate Intelligence", desc: "Proposer vs critic reasoning", x: 42, y: 87, color: "var(--chart-4)", activeBg: "rgba(255,255,255,0.95)" },
-    { id: "reflect", label: "Self-Reflection", desc: "Reviews and improves output", x: 65, y: 50, color: "var(--primary)", activeBg: "rgba(255,255,255,0.95)" },
-    { id: "task", label: "Task Graph Execution", desc: "Orchestrates DAG tasks", x: 80, y: 50, color: "var(--chart-2)", activeBg: "rgba(255,255,255,0.95)" },
-    { id: "output", label: "Generated Output", desc: "Final UI preview", x: 95, y: 50, color: "var(--primary)", activeBg: "rgba(255,255,255,0.95)" },
+    { id: "prompt", label: "User Prompt", desc: "Example query appears", x: 5, y: 50, color: "var(--primary)", activeBg: "var(--glow)" },
+    { id: "reason", label: "Reasoning Engine", desc: "Plans and decomposes tasks", x: 20, y: 50, color: "var(--chart-1)", activeBg: "var(--glow)" },
+    { id: "collab", label: "Multi-Agent Collaboration", desc: "Agents exchange messages", x: 42, y: 13, color: "var(--chart-2)", activeBg: "var(--glow)" },
+    { id: "research", label: "Deep Research", desc: "Retrieves and verifies sources", x: 42, y: 50, color: "var(--chart-3)", activeBg: "var(--glow)" },
+    { id: "debate", label: "Debate Intelligence", desc: "Proposer vs critic reasoning", x: 42, y: 87, color: "var(--chart-4)", activeBg: "var(--glow)" },
+    { id: "reflect", label: "Self-Reflection", desc: "Reviews and improves output", x: 65, y: 50, color: "var(--primary)", activeBg: "var(--glow)" },
+    { id: "task", label: "Task Graph Execution", desc: "Orchestrates DAG tasks", x: 80, y: 50, color: "var(--chart-2)", activeBg: "var(--glow)" },
+    { id: "output", label: "Generated Output", desc: "Final UI preview", x: 95, y: 50, color: "var(--primary)", activeBg: "var(--glow)" },
   ];
 
   const order = ["prompt", "reason", "collab", "research", "debate", "reflect", "task", "output"];
@@ -1528,34 +1528,74 @@ function ThinkingPipeline() {
           {lines.map((l, i) => {
             const from = point(nodeById[l.from]);
             const to = point(nodeById[l.to]);
-            const active = step >= l.activeAt;
+            const isActiveLine = step >= l.activeAt;
+            const lineColor = isActiveLine ? "rgba(200,136,42,0.8)" : "var(--border)";
+            
             return (
-              <line
-                key={i}
-                x1={from.x}
-                y1={from.y}
-                x2={to.x}
-                y2={to.y}
-                stroke={active ? "rgba(200,136,42,0.7)" : "var(--border)"}
-                strokeWidth={active ? 1.6 : 1}
-                strokeDasharray={active ? "6 4" : "0"}
-                style={{ animation: active ? "flowDash 1.6s linear infinite" : "none" }}
-              />
+              <g key={i}>
+                <line
+                  x1={from.x}
+                  y1={from.y}
+                  x2={to.x}
+                  y2={to.y}
+                  stroke={isActiveLine ? "rgba(200,136,42,0.9)" : "rgba(200,136,42,0.25)"}
+                  strokeWidth={isActiveLine ? 2 : 1.2}
+                  strokeDasharray="4 4"
+                  style={{ 
+                    animation: isActiveLine ? "flowDash 1.2s linear infinite" : "none",
+                    transition: "stroke 0.4s, stroke-width 0.4s"
+                  }}
+                />
+                {/* Sharp arrowhead dot at 'to' point */}
+                <circle cx={to.x} cy={to.y} r={2.5} fill={isActiveLine ? "rgba(200,136,42,1)" : "rgba(200,136,42,0.3)"} />
+              </g>
             );
           })}
         </svg>
 
         {nodes.map((n, i) => {
           const isActive = step === i;
+          const isCompleted = step > i;
+          const statusCol = isCompleted ? "#4aaf7a" : isActive ? "#c8a42a" : "rgba(120,110,100,0.4)";
+
           return (
-            <div key={n.id} style={{ position: "absolute", left: `${n.x}%`, top: `${n.y}%`, transform: "translate(-50%, -50%)" }}>
+            <div key={n.id} style={{ position: "absolute", left: `${n.x}%`, top: `${n.y}%`, transform: "translate(-50%, -50%)", zIndex: isActive ? 10 : 1 }}>
+              {/* High intensity bloom behind active node */}
+              {isActive && (
+                <div style={{
+                  position: "absolute", inset: -15, background: n.color, opacity: 0.2,
+                  filter: "blur(12px)", borderRadius: "50%", pointerEvents: "none"
+                }} />
+              )}
+              
               <div className="pipeline-node" style={{
-                borderColor: isActive ? n.color : "var(--border)",
-                borderWidth: isActive ? 2 : 1,
-                background: isActive ? n.activeBg : "var(--card)",
+                borderColor: isActive ? n.color : "rgba(200,136,42,0.35)",
+                borderWidth: isActive ? 2 : 1.5,
+                background: "var(--card)",
+                boxShadow: isActive ? `0 0 30px ${n.color}50` : "none",
                 color: isActive ? n.color : "var(--fg)",
                 opacity: 1,
+                transition: "all 0.4s ease",
+                position: "relative",
+                overflow: "visible"
               }}>
+                {/* Status Dot */}
+                <div style={{ 
+                  position: "absolute", top: 6, right: 6, width: 5, height: 5, borderRadius: "50%", 
+                  background: statusCol, transition: "background 0.3s",
+                  boxShadow: isActive || isCompleted ? `0 0 8px ${statusCol}` : "none"
+                }} />
+
+                {/* Corner Brackets (Active Only) */}
+                {isActive && (
+                  <>
+                    <div style={{ position: "absolute", top: -3, left: -3, width: 10, height: 10, borderTop: `2px solid ${n.color}`, borderLeft: `2px solid ${n.color}` }} />
+                    <div style={{ position: "absolute", top: -3, right: -3, width: 10, height: 10, borderTop: `2px solid ${n.color}`, borderRight: `2px solid ${n.color}` }} />
+                    <div style={{ position: "absolute", bottom: -3, left: -3, width: 10, height: 10, borderBottom: `2px solid ${n.color}`, borderLeft: `2px solid ${n.color}` }} />
+                    <div style={{ position: "absolute", bottom: -3, right: -3, width: 10, height: 10, borderBottom: `2px solid ${n.color}`, borderRight: `2px solid ${n.color}` }} />
+                  </>
+                )}
+
                 <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>{n.label}</div>
                 {renderDetail(n.id, isActive)}
                 <div className="pipeline-node-label">{n.desc}</div>

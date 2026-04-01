@@ -83,12 +83,12 @@
   --secondary: oklch(0.16 0.01 55);
   --secondary-foreground: oklch(0.75 0.07 78);
   --muted: oklch(0.16 0.01 55);
-  --muted-foreground: oklch(0.52 0.055 70);
+  --muted-foreground: oklch(0.80 0.04 75);
   --accent: oklch(0.78 0.16 82);
   --accent-foreground: oklch(0.09 0.005 50);
   --destructive: oklch(0.55 0.22 25);
   --destructive-foreground: oklch(0.88 0.06 78);
-  --border: oklch(0.21 0.015 58);
+  --border: oklch(0.40 0.015 58);
   --input: oklch(0.16 0.01 55);
   --ring: oklch(0.78 0.16 82);
   --chart-1: oklch(0.78 0.16 82);
@@ -108,21 +108,21 @@
   /* AMCAS retro tokens — dark */
   --phosphor: oklch(0.78 0.16 82);
   --phosphor-dim: oklch(0.78 0.16 82 / 0.4);
-  --scanline: oklch(0.95 0 0 / 0.025);
-  --glow: oklch(0.78 0.16 82 / 0.18);
-  --terminal-border: oklch(0.24 0.018 60);
+  --scanline: oklch(0.95 0 0 / 0.01);
+  --glow: oklch(0.78 0.16 82 / 0.25);
+  --terminal-border: oklch(0.45 0.018 60);
   /* SVG / chart color exports for JS usage */
-  --svg-grid: oklch(0.28 0.015 58 / 0.5);
-  --svg-edge: oklch(0.28 0.012 56);
+  --svg-grid: oklch(0.45 0.015 58 / 0.45);
+  --svg-edge: oklch(0.72 0.06 78);
   --svg-node-default-fill: oklch(0.12 0.006 52);
-  --svg-node-default-stroke: oklch(0.22 0.012 56);
-  --svg-text-primary: oklch(0.78 0.06 75);
-  --svg-text-muted: oklch(0.44 0.028 62);
+  --svg-node-default-stroke: oklch(0.45 0.012 56);
+  --svg-text-primary: oklch(0.88 0.08 78);
+  --svg-text-muted: oklch(0.75 0.03 70);
   --svg-tooltip-bg: oklch(0.12 0.008 52);
-  --svg-tooltip-border: oklch(0.24 0.018 60);
-  --svg-tooltip-text: oklch(0.82 0.07 78);
+  --svg-tooltip-border: oklch(0.45 0.018 60);
+  --svg-tooltip-text: oklch(0.88 0.08 78);
   --svg-chart-line: oklch(0.78 0.16 82);
-  --svg-chart-grid: oklch(0.22 0.012 56);
+  --svg-chart-grid: oklch(0.40 0.012 56);
 }
 
 @theme inline {

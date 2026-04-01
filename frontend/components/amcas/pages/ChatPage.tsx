@@ -181,6 +181,7 @@ export default function ChatPage() {
     setInput("");
     setError(null);
     const filesToUpload = [...selectedFiles];
+    const pdfNames = filesToUpload.map(f => f.name);
     setSelectedFiles([]);
 
     addChatMessage({
@@ -189,6 +190,7 @@ export default function ChatPage() {
       content: userMsg || `Uploaded ${filesToUpload.length} PDF(s)`,
       mode: selectedMode,
       timestamp: new Date(),
+      pdfs: pdfNames.length > 0 ? pdfNames : undefined,
     });
     setIsGenerating(true);
 
@@ -211,7 +213,11 @@ export default function ChatPage() {
       // Step 1: Process PDFs if any
       if (hasPdfs) {
         const { uploadPdfs } = await import("@/lib/api");
-        await uploadPdfs(filesToUpload);
+        const uploadRes = await uploadPdfs(filesToUpload, conversationId);
+        // Save returned conversation_id if any
+        if (uploadRes.conversation_id) {
+          setConversationId(uploadRes.conversation_id);
+        }
         // Update indicator to "Analyzing input..." after PDFs are done
         updateChatMessage(assistantId, {
           processingIndicator: "Analyzing input...",
@@ -226,7 +232,7 @@ export default function ChatPage() {
       if (query) {
         // Only proceed with LLM generation if we have a query
         if (selectedMode === "standard") {
-          const result = await callChatApi(query, conversationId);
+          const result = await callChatApi(query, conversationId, pdfNames);
           // Save returned conversation_id for future messages
           if (result.conversation_id) {
             setConversationId(result.conversation_id);
@@ -300,7 +306,8 @@ export default function ChatPage() {
                 });
               }
             },
-            conversationId
+            conversationId,
+            pdfNames
           );
 
           // Update conversation ID if returned
@@ -333,7 +340,8 @@ export default function ChatPage() {
             },
             undefined,
             undefined,
-            conversationId
+            conversationId,
+            pdfNames
           );
 
           // Update conversation ID if returned

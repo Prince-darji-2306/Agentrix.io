@@ -9,9 +9,8 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
-  mode: ChatMode;
+  mode?: ChatMode;
   timestamp: Date;
-  systemIndicators?: string[];
   processingIndicator?: string;
   meta?: {
     confidenceScore: number;
@@ -21,6 +20,7 @@ export interface ChatMessage {
     logicalConsistency?: number;
     criticFeedback?: string;
   };
+  pdfs?: string[];
   conversationId?: string; // Backend conversation_id for this message pair
 }
 

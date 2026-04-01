@@ -56,7 +56,7 @@ export async function login(email: string, password: string): Promise<AuthRespon
 export interface HistoryMessage {
   id: string;
   reasoning_mode: string;
-  content: Array<{ user: string; assistant: string }>;
+  content: Array<{ user: string; assistant: string; pdfs?: string[] }>;
   confidence: number | null;
   consistency: number | null;
   created_at: string;
@@ -249,9 +249,14 @@ export interface SmartSSEEvent {
 // ─── Standard Chat ────────────────────────────────────────────────────────────
 
 // Non-streaming chat call - matches backend /chat JSON response
-export async function callChatApiNonStreaming(query: string, conversationId?: string | null): Promise<ChatResult & { conversation_id?: string }> {
+export async function callChatApiNonStreaming(
+  query: string, 
+  conversationId?: string | null,
+  pdfs?: string[]
+): Promise<ChatResult & { conversation_id?: string }> {
   const body: Record<string, unknown> = { query };
   if (conversationId) body.conversation_id = conversationId;
+  if (pdfs) body.pdfs = pdfs;
 
   const res = await fetch(`${API_BASE}/chat`, {
     method: "POST",
@@ -279,18 +284,24 @@ export async function callChatApiNonStreaming(query: string, conversationId?: st
   };
 }
 
-export async function callChatApi(query: string, conversationId?: string | null): Promise<ChatResult & { conversation_id?: string }> {
+export async function callChatApi(
+  query: string, 
+  conversationId?: string | null,
+  pdfs?: string[]
+): Promise<ChatResult & { conversation_id?: string }> {
   // Use non-streaming version to match backend
-  return await callChatApiNonStreaming(query, conversationId);
+  return await callChatApiNonStreaming(query, conversationId, pdfs);
 }
 
 export async function callOrchestratorApi(
   task: string,
   onLog: (log: string) => void,
-  conversationId?: string | null
+  conversationId?: string | null,
+  pdfs?: string[]
 ): Promise<ChatResult & { orchestratorRaw?: OrchestratorApiResponse }> {
   const body: Record<string, unknown> = { task };
   if (conversationId) body.conversation_id = conversationId;
+  if (pdfs) body.pdfs = pdfs;
 
   const res = await fetch(`${API_BASE}/orchestrator/task`, {
     method: "POST",
@@ -384,9 +395,14 @@ export async function* streamDebate(
 
 // ─── Smart Orchestrator Stream ───────────────────────────────────────────────
 
-export async function* callSmartOrchestratorStream(task: string, conversationId?: string | null): AsyncGenerator<SmartSSEEvent> {
+export async function* callSmartOrchestratorStream(
+  task: string, 
+  conversationId?: string | null,
+  pdfs?: string[]
+): AsyncGenerator<SmartSSEEvent> {
   const body: Record<string, unknown> = { task };
   if (conversationId) body.conversation_id = conversationId;
+  if (pdfs) body.pdfs = pdfs;
 
   const res = await fetch(`${API_BASE}/smart-orchestrator/stream`, {
     method: "POST",
@@ -429,7 +445,7 @@ export async function* callSmartOrchestratorStream(task: string, conversationId?
 
 // ─── Unified entry-point for ChatPage ────────────────────────────────────────
 
-export async function uploadPdfs(files: File[]): Promise<any> {
+export async function uploadPdfs(files: File[], conversationId?: string | null): Promise<any> {
   const formData = new FormData();
   files.forEach((file) => formData.append("files", file));
 
@@ -439,7 +455,12 @@ export async function uploadPdfs(files: File[]): Promise<any> {
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const res = await fetch(`${API_BASE}/upload-pdf`, {
+  let url = `${API_BASE}/upload-pdf`;
+  if (conversationId) {
+    url += `?conversation_id=${encodeURIComponent(conversationId)}`;
+  }
+
+  const res = await fetch(url, {
     method: "POST",
     headers,
     body: formData,
@@ -460,10 +481,11 @@ export async function generateResponse(
   onNodeUpdate?: (event: SmartSSEEvent) => void,
   onContentChunk?: (section: string, content: string) => void,
   conversationId?: string | null,
+  pdfs?: string[]
 ): Promise<ChatResult> {
   if (mode === "standard") {
     onIndicator("Analyzing input…");
-    const result = await callChatApi(prompt, conversationId);
+    const result = await callChatApi(prompt, conversationId, pdfs);
     onIndicator("");
     return result;
   }
@@ -496,7 +518,7 @@ export async function generateResponse(
     let indicatorInterval: ReturnType<typeof setInterval> | null = null;
 
     try {
-      for await (const event of callSmartOrchestratorStream(prompt, conversationId)) {
+      for await (const event of callSmartOrchestratorStream(prompt, conversationId, pdfs)) {
         switch (event.type) {
           case "conversation_id":
             backendConversationId = event.conversation_id;
@@ -600,7 +622,7 @@ export async function generateResponse(
   }, 1500);
 
   try {
-    let result = await callOrchestratorApi(prompt, (log) => onIndicator(log), conversationId);
+    let result = await callOrchestratorApi(prompt, (log) => onIndicator(log), conversationId, pdfs);
     if (result.orchestratorRaw) {
       result = {
         ...result,

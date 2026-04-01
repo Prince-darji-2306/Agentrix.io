@@ -3,7 +3,7 @@
 import React, { useState, useCallback } from "react";
 import { ChatMessage as ChatMessageType } from "@/lib/store";
 import ConfidenceBar from "./ConfidenceBar";
-import { ChevronDown, ChevronUp, Wrench, RotateCcw, Layers, CheckCircle2, Copy, Check } from "lucide-react";
+import { ChevronDown, ChevronUp, Wrench, RotateCcw, Layers, CheckCircle2, Copy, Check, FileText } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ChatMessageProps {
@@ -106,7 +106,7 @@ const MarkdownComponents: any = {
 export default function ChatMessage({ message }: ChatMessageProps) {
   const [metaOpen, setMetaOpen] = useState(false);
   const isAssistant = message.role === "assistant";
-  const modeInfo = MODE_LABELS[message.mode] ?? MODE_LABELS.standard;
+  const modeInfo = (message.mode ? MODE_LABELS[message.mode] : MODE_LABELS.standard) || MODE_LABELS.standard;
   const isProcessing = !!message.processingIndicator;
 
   return (
@@ -169,6 +169,26 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
             {message.content}
           </ReactMarkdown>
+
+          {/* PDF attachment boxes — shown below message text */}
+          {!isAssistant && message.pdfs && message.pdfs.length > 0 && (
+            <div className="mt-2.5 pt-2 border-t border-primary/20">
+              <p className="text-[9px] font-mono tracking-widest text-primary/50 uppercase mb-1.5">
+                Attached · {message.pdfs.length} file{message.pdfs.length !== 1 ? "s" : ""}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {message.pdfs.map((pdf, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center gap-1.5 px-2.5 py-1 bg-primary/10 border border-primary/20 text-[10px] font-mono text-primary"
+                  >
+                    <FileText className="w-2.5 h-2.5 shrink-0 opacity-70" />
+                    <span className="truncate max-w-[160px]">{pdf}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Expandable meta for assistant */}

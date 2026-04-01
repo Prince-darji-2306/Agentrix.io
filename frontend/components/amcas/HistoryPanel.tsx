@@ -61,6 +61,7 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
                 mode: "standard",
                 timestamp: new Date(msg.created_at),
                 conversationId: conv.id,
+                pdfs: entry.pdfs,
               });
             }
             if (entry.assistant) {
