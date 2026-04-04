@@ -1530,7 +1530,7 @@ function ThinkingPipeline() {
             const to = point(nodeById[l.to]);
             const isActiveLine = step >= l.activeAt;
             const lineColor = isActiveLine ? "rgba(200,136,42,0.8)" : "var(--border)";
-            
+
             return (
               <g key={i}>
                 <line
@@ -1541,7 +1541,7 @@ function ThinkingPipeline() {
                   stroke={isActiveLine ? "rgba(200,136,42,0.9)" : "rgba(200,136,42,0.25)"}
                   strokeWidth={isActiveLine ? 2 : 1.2}
                   strokeDasharray="4 4"
-                  style={{ 
+                  style={{
                     animation: isActiveLine ? "flowDash 1.2s linear infinite" : "none",
                     transition: "stroke 0.4s, stroke-width 0.4s"
                   }}
@@ -1567,7 +1567,7 @@ function ThinkingPipeline() {
                   filter: "blur(12px)", borderRadius: "50%", pointerEvents: "none"
                 }} />
               )}
-              
+
               <div className="pipeline-node" style={{
                 borderColor: isActive ? n.color : "rgba(200,136,42,0.35)",
                 borderWidth: isActive ? 2 : 1.5,
@@ -1580,8 +1580,8 @@ function ThinkingPipeline() {
                 overflow: "visible"
               }}>
                 {/* Status Dot */}
-                <div style={{ 
-                  position: "absolute", top: 6, right: 6, width: 5, height: 5, borderRadius: "50%", 
+                <div style={{
+                  position: "absolute", top: 6, right: 6, width: 5, height: 5, borderRadius: "50%",
                   background: statusCol, transition: "background 0.3s",
                   boxShadow: isActive || isCompleted ? `0 0 8px ${statusCol}` : "none"
                 }} />
@@ -1670,8 +1670,8 @@ function AuthScreen({ mode, onSwitch, onBack, onAuth, ThemeBtn }) {
     headerBlock: { border: "1px solid var(--border)", borderBottom: "none", background: "var(--card)", padding: "20px 20px 16px" },
     body: { border: "1px solid var(--border)", background: "var(--card)", padding: "20px" },
     footer: { border: "1px solid var(--border)", borderTop: "none", background: "var(--secondary)", padding: "10px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
-    btn: { width: "100%", padding: "12px", fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", border: "1px solid rgba(200,136,42,0.5)", background: "rgba(200,136,42,0.1)", color: "var(--primary)", cursor: "pointer", fontFamily: "inherit", marginTop: 8, transition: "all 0.2s" },
-    backBtn: { position: "absolute", top: 20, left: 20, zIndex: 20, background: "none", border: "none", color: "var(--muted)", fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit" },
+    btn: { width: "100%", padding: "12px", fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", border: "1px solid rgba(200,136,42,0.5)", background: "rgba(200,136,42,0.1)", color: "var(--primary)", cursor: "pointer", fontFamily: "inherit", marginTop: 8, transition: "all 0.2s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 },
+    backBtn: { position: "absolute", top: 20, left: 20, zIndex: 20, background: "none", border: "none", color: "var(--muted)", fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 },
   };
 
   if (submitted) {
@@ -1740,7 +1740,7 @@ function AuthScreen({ mode, onSwitch, onBack, onAuth, ThemeBtn }) {
 
         <div style={s.footer}>
           <span style={{ fontSize: 9, color: "var(--fg-dim)", letterSpacing: "0.08em" }}>{isLogin ? "No account?" : "Have an account?"}</span>
-          <button style={{ background: "none", border: "none", fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(200,136,42,0.7)", cursor: "pointer", fontFamily: "inherit" }} onClick={onSwitch}>
+          <button style={{ background: "none", border: "none", fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(200,136,42,0.7)", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }} onClick={onSwitch}>
             {isLogin ? <>Register <ArrowRight size={14} /></> : <><ArrowLeft size={14} /> Sign In</>}
           </button>
         </div>
@@ -1759,7 +1759,7 @@ export default function Landing({ onEnterApp }) {
   const isDark = resolvedTheme === "dark";
   const toggleTheme = () => setTheme(isDark ? "light" : "dark");
   const headline = useTypewriter("AUTONOMOUS MULTI-AGENT COGNITIVE SYSTEM", 40, 400);
-  const sub = useTypewriter("v2.4.1 — LangGraph · Groq · AutoGen · ChromaDB", 25, 2400);
+  const sub = useTypewriter("v2.4.1 — LangGraph · Groq · AutoGen · Qdrant", 25, 2400);
   const [scrollY, setScrollY] = useState(0);
 
   useEffect(() => {
@@ -1827,7 +1827,7 @@ export default function Landing({ onEnterApp }) {
   ];
 
 
-  const techStack = ["LangGraph", "Groq", "AutoGen", "ChromaDB", "FastAPI", "Next.js", "Zustand", "SSE", "Pydantic", "LangChain", "Radar Charts", "DAG Viewer"];
+  const techStack = ["LangGraph", "Groq", "AutoGen", "Qdrant", "FastAPI", "Next.js", "Zustand", "SSE", "Pydantic", "LangChain", "Radar Charts", "DAG Viewer"];
 
   const S = {
     page: { background: "var(--bg)", color: "var(--fg)", fontFamily: "'JetBrains Mono', monospace", overflowX: "hidden" },
@@ -1837,8 +1837,8 @@ export default function Landing({ onEnterApp }) {
     sectionHeader: { display: "flex", alignItems: "center", gap: 16, marginBottom: 56 },
     divider: { flex: 1, height: 1, background: "var(--border)" },
     badge: { border: "1px solid var(--border)", background: "var(--card)", padding: "8px 16px" },
-    primaryBtn: { padding: "14px 32px", fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 700, border: "1px solid rgba(200,136,42,0.6)", background: "rgba(200,136,42,0.1)", color: "var(--primary)", cursor: "pointer", fontFamily: "inherit", transition: "all 0.25s" },
-    secondaryBtn: { padding: "14px 28px", fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", border: "1px solid var(--border)", background: "var(--secondary)", color: "var(--secondary-fg)", cursor: "pointer", fontFamily: "inherit", transition: "all 0.25s" },
+    primaryBtn: { padding: "14px 32px", fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", fontWeight: 700, border: "1px solid rgba(200,136,42,0.6)", background: "rgba(200,136,42,0.1)", color: "var(--primary)", cursor: "pointer", fontFamily: "inherit", transition: "all 0.25s", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 },
+    secondaryBtn: { padding: "14px 28px", fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", border: "1px solid var(--border)", background: "var(--secondary)", color: "var(--secondary-fg)", cursor: "pointer", fontFamily: "inherit", transition: "all 0.25s", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 },
   };
 
   return (
@@ -2201,7 +2201,7 @@ export default function Landing({ onEnterApp }) {
           </div>
           <div style={{ maxWidth: 1200, margin: "16px auto 0", paddingTop: 16, borderTop: "1px solid rgba(42,36,32,0.5)", textAlign: "center" }}>
             <p style={{ fontSize: 8, letterSpacing: "0.15em", color: "rgba(90,78,64,0.3)", textTransform: "uppercase" }}>
-              Built with LangGraph · Groq · FastAPI · Next.js · ChromaDB · All rights reserved © 2025
+              Built with LangGraph · Groq · FastAPI · Next.js · Qdrant · All rights reserved © 2025
             </p>
           </div>
         </footer>

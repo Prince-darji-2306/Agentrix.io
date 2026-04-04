@@ -139,6 +139,7 @@ export interface PdfSummary {
   topic_tags: string[];
   user_id: string;
   conversation_id: string | null;
+  quality_score?: number;
 }
 
 export async function getMemoryPdfs(): Promise<PdfSummary[]> {
@@ -355,7 +356,7 @@ export async function* streamDebate(
   conversationId?: string | null
 ): AsyncGenerator<DebateMessage> {
   let url = `${API_BASE}/debate/stream?topic=${encodeURIComponent(topic)}&rounds=${rounds}`;
-  if (conversationId) url += `&conversation_id=${encodeURIComponent(conversationId)}`;
+  // if (conversationId) url += `&conversation_id=${encodeURIComponent(conversationId)}`;
 
   const res = await fetch(url, {
     headers: getAuthHeaders(),

@@ -162,7 +162,7 @@ export default function RegisterPage({ onEnterApp }) {
     headerBlock: { border: "1px solid var(--border)", borderBottom: "none", background: "var(--card)", padding: "20px 20px 16px" },
     body: { border: "1px solid var(--border)", background: "var(--card)", padding: "20px" },
     footer: { border: "1px solid var(--border)", borderTop: "none", background: "var(--secondary)", padding: "10px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
-    btn: { width: "100%", padding: "12px", fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", border: "1px solid rgba(200,136,42,0.5)", background: "rgba(200,136,42,0.1)", color: "var(--primary)", cursor: "pointer", fontFamily: "inherit", marginTop: 8, transition: "all 0.2s" },
+    btn: { width: "100%", padding: "12px", fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", border: "1px solid rgba(200,136,42,0.5)", background: "rgba(200,136,42,0.1)", color: "var(--primary)", cursor: "pointer", fontFamily: "inherit", marginTop: 8, transition: "all 0.2s", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 },
     backBtn: { position: "absolute", top: 20, left: 20, zIndex: 20, background: "none", border: "none", color: "var(--muted)", fontSize: 10, letterSpacing: "0.15em", textTransform: "uppercase", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 },
   };
 
@@ -233,7 +233,7 @@ export default function RegisterPage({ onEnterApp }) {
 
           <div style={s.footer}>
             <span style={{ fontSize: 9, color: "var(--fg-dim)", letterSpacing: "0.08em" }}>Have an account?</span>
-            <button style={{ background: "none", border: "none", fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(200,136,42,0.7)", cursor: "pointer", fontFamily: "inherit" }} onClick={() => navigate("/login")}>
+            <button style={{ background: "none", border: "none", fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase", color: "rgba(200,136,42,0.7)", cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 4 }} onClick={() => navigate("/login")}>
               <ArrowLeft size={14} /> Sign In
             </button>
           </div>

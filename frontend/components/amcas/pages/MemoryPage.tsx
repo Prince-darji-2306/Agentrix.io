@@ -64,6 +64,16 @@ export default function MemoryPage() {
       y: 60 + Math.floor(i / 3) * 100,
     }));
 
+  let totalQuality = 0;
+  let qualityCount = 0;
+  pdfs.forEach((pdf) => {
+    if (typeof pdf.quality_score === "number") {
+      totalQuality += pdf.quality_score;
+      qualityCount++;
+    }
+  });
+  const avgQualityStr = qualityCount > 0 ? Math.round(totalQuality / qualityCount) + "%" : "N/A";
+
   return (
     <div className="h-full overflow-y-auto font-mono">
       {/* Header */}
@@ -82,7 +92,7 @@ export default function MemoryPage() {
             { label: "Uploaded PDFs", value: String(pdfs.length).padStart(3, "0"), icon: FileText, sub: "Total documents" },
             { label: "Topic Clusters", value: String(clusters.length).padStart(2, "0"), icon: Network, sub: "Knowledge areas" },
             { label: "Active Memories", value: String(Math.min(pdfs.length, 3)).padStart(3, "0"), icon: Brain, sub: "Ready for RAG" },
-            { label: "Quality Score", value: pdfs.length > 0 ? "93%" : "N/A", icon: TrendingUp, sub: pdfs.length > 0 ? "Average relevance" : "Upload PDFs to score" },
+            { label: "Quality Score", value: pdfs.length > 0 ? avgQualityStr : "N/A", icon: TrendingUp, sub: pdfs.length > 0 ? "Average relevance" : "Upload PDFs to score" },
           ].map((stat) => {
             const Icon = stat.icon;
             return (
