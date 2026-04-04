@@ -1,0 +1,74 @@
+from core.llm_engine import get_llm
+from langchain_core.messages import HumanMessage, SystemMessage
+
+
+# ─── Node Coordinates for Standard & Deep Research Paths ──────────────────────
+
+STANDARD_NODE_COORDS = {
+    "router": {"x": 400, "y": 60},
+    "output": {"x": 400, "y": 200},
+}
+
+DEEP_RESEARCH_NODE_COORDS = {
+    "router":              {"x": 400, "y": 60},
+    "orchestrator":        {"x": 400, "y": 160},
+    "researcher_1":        {"x": 240, "y": 280},
+    "researcher_2":        {"x": 560, "y": 280},
+    "aggregator":          {"x": 400, "y": 400},
+    "critic":              {"x": 400, "y": 480},
+    "output":              {"x": 400, "y": 560},
+}
+
+
+def get_standard_node_coords() -> dict:
+    """Return node coordinates for the standard path."""
+    return STANDARD_NODE_COORDS
+
+
+def get_deep_research_node_coords() -> dict:
+    """Return node coordinates for the deep research path."""
+    return DEEP_RESEARCH_NODE_COORDS
+
+
+# ─── Query Classifier ─────────────────────────────────────────────────────────
+
+async def classify_query(task: str) -> tuple[str, str, str]:
+    """Classify the task into one of three paths and return problem understanding for code tasks."""
+    llm = get_llm(temperature=0.0, instant=True)
+
+    prompt = f"""You are a query router. Classify the following user query into exactly one category.
+
+        Query: {task}
+
+        Categories:
+        - standard: Simple factual questions, greetings, quick calculations, single-step tasks
+        - deep_research: Questions requiring multi-perspective research, analysis, comparisons, explanations of complex topics
+        - code: Requests to write, implement, debug, or generate code, algorithms, data structures
+
+        Respond in EXACTLY this format:
+        PATH: [standard|deep_research|code]
+        UNDERSTANDING: [If PATH is code, provide a brief 2-3 sentence problem understanding explaining what the problem asks for and what the expected solution should look like. If PATH is not code, write "N/A"]
+        REASON: [brief explanation of why this path was chosen]"""
+
+    response = await llm.ainvoke([
+        SystemMessage(content="You are a query classifier. Output only the specified format."),
+        HumanMessage(content=prompt),
+    ])
+
+    content = response.content.strip()
+    path = "standard"
+    reason = "Default classification"
+    problem_understanding = "N/A"
+
+    for line in content.split("\n"):
+        line = line.strip()
+        if line.startswith("PATH:"):
+            extracted = line.split(":")[1].strip().lower()
+            if extracted in ("standard", "deep_research", "code"):
+                path = extracted
+        elif line.startswith("UNDERSTANDING:"):
+            problem_understanding = line.split(":", 1)[1].strip()
+        elif line.startswith("REASON:"):
+            reason = line.split(":", 1)[1].strip()
+
+    return path, reason, problem_understanding
