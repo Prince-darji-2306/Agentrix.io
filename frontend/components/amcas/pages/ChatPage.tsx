@@ -28,6 +28,10 @@ const CODE_MODE_EDGES: GraphEdge[] = [
   { id: "e-reviewer-output", from: "code_reviewer", to: "output" },
 ];
 
+const STANDARD_MODE_EDGES: GraphEdge[] = [
+  { id: "e-router-output", from: "router", to: "output" },
+];
+
 export default function ChatPage() {
   const {
     chatMessages,
@@ -257,8 +261,12 @@ export default function ChatPage() {
             (indicator) => updateChatMessage(assistantId, { processingIndicator: indicator }),
             // onNodeUpdate
             (event: SmartSSEEvent) => {
-              if (event.type === "route" && event.path === "code") {
-                setGraphEdges(CODE_MODE_EDGES);
+              if (event.type === "route") {
+                if (event.path === "code") {
+                  setGraphEdges(CODE_MODE_EDGES);
+                } else if (event.path === "standard") {
+                  setGraphEdges(STANDARD_MODE_EDGES);
+                }
               }
               if (event.type === "route" && event.path === "deep_research") {
                 // Deep research edges will be built from orchestratorRaw after completion
