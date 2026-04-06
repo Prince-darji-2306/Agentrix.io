@@ -4,4 +4,4 @@ from services.orchestrator_service import run_orchestrator
 from services.debate_service import run_debate_stream, structure_debate_rounds
 from services.smart_orchestrator_service import smart_orchestrator_stream
 from services.rag_service import run_smart_chat
-from services.memory_service import get_conversation_memory_context
+from services.memory_service import get_conversation_memory_context, get_conversation_memory_context_async
