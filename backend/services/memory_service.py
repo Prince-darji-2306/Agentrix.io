@@ -1,124 +1,122 @@
 """
 memory_service.py
 
-Provides conversation buffer memory context for all agent pipelines.
+Provides conversation window memory context for all agent pipelines.
 
-Uses LangChain's ConversationSummaryBufferMemory to:
-  1. Load past messages from Postgres (for a given conversation_id)
-  2. Summarize older turns using a fast LLM when token limit is exceeded
-  3. Return a formatted context string to be prepended to each new request
+Uses a global in-memory store to keep the last 4 message turns per conversation.
+This avoids calling the database on each request and is much faster than
+LLM-based summarization.
 
-This context is per-conversation-id, so each thread maintains its own history.
+The store is updated after each query/response via add_to_memory().
 """
 
-from langchain.memory import ConversationSummaryBufferMemory
+from typing import Dict, List, Optional, Tuple
+import threading
 
-from core.llm_engine import get_llm
+# Global in-memory store: {conversation_id: [(user_msg, assistant_msg), ...]}
+# Keeps last 4 turns per conversation
+_conversation_memory: Dict[str, List[Tuple[str, str]]] = {}
+_memory_lock = threading.Lock()
+
+# Window size - number of message turns to keep
+_WINDOW_SIZE = 4
 
 
-# Maximum number of tokens to keep in the raw buffer before summarization kicks in.
-# Older messages beyond this limit are auto-summarized by the LLM.
-_MAX_TOKEN_LIMIT = 1500
+def add_to_memory(conversation_id: str, user_message: str, assistant_message: str) -> None:
+    """
+    Add a new message turn to the conversation memory.
+    Keeps only the last 4 turns in memory.
+    
+    Called after each query/response to keep the memory updated.
+    """
+    global _conversation_memory
+    
+    with _memory_lock:
+        if conversation_id not in _conversation_memory:
+            _conversation_memory[conversation_id] = []
+        
+        # Add new turn
+        _conversation_memory[conversation_id].append((user_message, assistant_message))
+        
+        # Keep only last WINDOW_SIZE turns
+        if len(_conversation_memory[conversation_id]) > _WINDOW_SIZE:
+            _conversation_memory[conversation_id] = _conversation_memory[conversation_id][-(_WINDOW_SIZE):]
 
 
-async def get_conversation_memory_context(
+def get_conversation_memory_context(
     conversation_id: str,
     user_id: str,
 ) -> str | None:
     """
-    Fetch the conversation history for the given conversation_id and return
-    a LangChain-summarized memory context string ready to inject into prompts.
-
-    Returns None if there is no prior context (new conversation or empty history).
-
-    Logging:
-        [memory_service] Loaded N turns from DB for conversation <id>
-        [memory_service] Memory context built: <N> characters (X turns)
-        [memory_service] No prior context found for conversation <id>
-        [memory_service] ERROR <description>
+    Get the conversation memory context for a given conversation.
+    Returns a formatted string with the last 4 message turns.
+    
+    This is a synchronous function that reads from the in-memory store.
+    No DB calls - much faster than summary-based memory.
+    
+    Returns None if no conversation memory exists.
     """
-    try:
-        from repositories.postgres_repo import get_conversation_with_messages
-
-        print(f"[memory_service] Fetching history for conversation_id={conversation_id}, user_id={user_id}")
-
-        # ── 1. Load raw history from Postgres ────────────────────────────────
-        try:
-            data = await get_conversation_with_messages(conversation_id, user_id)
-        except ValueError:
-            # Conversation not found (e.g., ID was just created this request)
-            print(f"[memory_service] Conversation {conversation_id} not found in DB — skipping memory.")
-            return None
-
-        messages = data.get("messages", [])
-        if not messages:
-            print(f"[memory_service] No prior messages for conversation {conversation_id}.")
-            return None
-
-        # Build (user, assistant) pairs from the message rows.
-        # Each row's `content` is a list of turn dicts: [{"user": "...", "assistant": "..."}]
-        turns: list[tuple[str, str]] = []
-        for msg_row in messages:
-            content = msg_row.get("content", [])
-            for turn in content:
-                user_text = turn.get("user", "").strip()
-                assistant_text = turn.get("assistant", "").strip()
-                if user_text and assistant_text:
-                    turns.append((user_text, assistant_text))
-
-        print(f"[memory_service] Loaded {len(turns)} turns from DB for conversation {conversation_id}")
-
-        if not turns:
-            print(f"[memory_service] No valid user/assistant turns — skipping memory.")
-            return None
-
-        # ── 2. Feed turns into ConversationSummaryBufferMemory ───────────────
-        # Using the "instant" LLM for fast summarization.
-        summarizer_llm = get_llm(instant=True, temperature=0.1, change=False)
-
-        memory = ConversationSummaryBufferMemory(
-            llm=summarizer_llm,
-            max_token_limit=_MAX_TOKEN_LIMIT,
-            return_messages=False,          # return as plain string, not message objects
-            memory_key="history",
-        )
-
-        for user_text, assistant_text in turns:
-            memory.save_context(
-                {"input": user_text},
-                {"output": assistant_text},
-            )
-
-        # ── 3. Extract the summarized + buffered context ──────────────────────
-        memory_vars = memory.load_memory_variables({})
-        history_str: str = memory_vars.get("history", "").strip()
-
-        if not history_str:
-            print(f"[memory_service] Memory returned empty history string.")
-            return None
-
-        print(
-            f"[memory_service] Memory context built: {len(history_str)} characters "
-            f"({len(turns)} turns) for conversation {conversation_id}"
-        )
-        return history_str
-
-    except Exception as e:
-        print(f"[memory_service] ERROR building memory context: {e}")
-        # Non-fatal — fall through without context rather than breaking a request
+    with _memory_lock:
+        turns = _conversation_memory.get(conversation_id, [])
+    
+    if not turns:
         return None
+    
+    # Format as simple conversation history
+    formatted_turns = []
+    for i, (user_msg, assistant_msg) in enumerate(turns, 1):
+        formatted_turns.append(f"Turn {i}:\nUser: {user_msg}\nAssistant: {assistant_msg}")
+    
+    history_str = "\n\n".join(formatted_turns)
+    
+    print(
+        f"[memory_service] Window memory: {len(turns)} turns "
+        f"for conversation {conversation_id}"
+    )
+    
+    return history_str
+
+
+async def get_conversation_memory_context_async(
+    conversation_id: str,
+    user_id: str,
+) -> str | None:
+    """
+    Async wrapper for get_conversation_memory_context.
+    For compatibility with existing async code.
+    """
+    return get_conversation_memory_context(conversation_id, user_id)
+
+
+def clear_conversation_memory(conversation_id: str) -> None:
+    """
+    Clear memory for a specific conversation.
+    Called when a conversation is deleted.
+    """
+    global _conversation_memory
+    
+    with _memory_lock:
+        if conversation_id in _conversation_memory:
+            del _conversation_memory[conversation_id]
+
+
+def get_all_conversations() -> List[str]:
+    """
+    Get list of all conversation IDs currently in memory.
+    """
+    with _memory_lock:
+        return list(_conversation_memory.keys())
 
 
 def format_memory_block(memory_context: str) -> str:
     """
-    Wrap the raw memory context string in a clear delimiter block
+    Wrap the memory context string in a clear delimiter block
     that explicitly instructs the agent to treat this as background context only.
     """
     return (
-        "\n--- BACKGROUND CONVERSATION CONTEXT ---\n"
-        "[SYSTEM INSTRUCTION: The following is a summary of prior turns in this conversation. "
-        "Use this ONLY as context. Do NOT answer previous questions again. Focus exclusively "
-        "on fulfilling the user's latest query provided below.]\n\n"
+        "\n--- RECENT CONVERSATION CONTEXT ---\n"
+        "[SYSTEM INSTRUCTION: The following is the recent conversation history. "
+        "Use this as context for the current query.]\n\n"
         f"{memory_context}\n"
-        "--- END OF BACKGROUND CONTEXT ---\n\n"
+        "--- END OF CONTEXT ---\n\n"
     )
