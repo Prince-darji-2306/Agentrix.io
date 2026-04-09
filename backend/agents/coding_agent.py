@@ -316,130 +316,61 @@ def detect_language(content: str) -> str:
 
 
 async def format_output_node(state: CodingAgentState) -> dict:
-    """Composes final markdown output with approach and code."""
-    subtasks = state["subtasks"]
+    """Parses merged code into a structured list of {filename, content, language} dicts."""
     merged_code = state["merged_code"]
 
-    approach_lines = []
-    for st in subtasks:
-        agent_name = f"Coding Agent {st['id']}"
-        approach_lines.append(f"- **{agent_name}**: {st['description']}")
-    approach_section = "\n".join(approach_lines)
-
-    code = merged_code
-    if "```" in code:
-        fenced_blocks = re.findall(r'```(\w*)\n(.*?)```', code, re.DOTALL)
+    # Strip any stray markdown fences first
+    if "```" in merged_code:
+        fenced_blocks = re.findall(r'```(\w*)\n(.*?)```', merged_code, re.DOTALL)
         if fenced_blocks:
-            code = "\n\n".join(block_content.strip() for _, block_content in fenced_blocks)
+            merged_code = "\n\n".join(block_content.strip() for _, block_content in fenced_blocks)
         else:
-            code = re.sub(r'```\w*\n?', '', code).replace('```', '').strip()
+            merged_code = re.sub(r'```\w*\n?', '', merged_code).replace('```', '').strip()
 
+    parsed_files = []
     file_separator = "# === FILE:"
-    if file_separator in code:
-        file_blocks = code.split(file_separator)
-        code_blocks = []
+
+    if file_separator in merged_code:
+        file_blocks = merged_code.split(file_separator)
         for file_block in file_blocks:
             file_block = file_block.strip()
             if not file_block:
                 continue
             lines = file_block.split("\n")
-            header_line = lines[0].strip()
-            filename = header_line.replace("===", "").strip()
+            filename = lines[0].strip().replace("===", "").strip()
             if not filename:
                 continue
-
-            content_lines = lines[1:]
-            full_content = "\n".join(content_lines)
-
-            explanation = ""
+            full_content = "\n".join(lines[1:])
+            # Strip explanation after "---"
             file_content = full_content
-            if "\n---\n" in full_content or full_content.startswith("---\n") or "\n---" in full_content:
-                parts = re.split(r'\n---\n', full_content, maxsplit=1)
-                file_content = parts[0].strip()
-                if len(parts) > 1:
-                    explanation = parts[1].strip()
-
+            if "\n---\n" in full_content:
+                file_content = re.split(r'\n---\n', full_content, maxsplit=1)[0].strip()
             if file_content:
-                lang = detect_language(file_content)
-                block = f"### `{filename}`\n\n```{lang}\n{file_content}\n```"
-                if explanation:
-                    block += f"\n\n**Explanation:** {explanation}"
-                code_blocks.append(block)
-        code_section = "\n\n---\n\n".join(code_blocks)
+                parsed_files.append({
+                    "filename": filename,
+                    "content": file_content,
+                    "language": detect_language(file_content),
+                })
     else:
-        all_blocks = re.findall(r'```(\w*)\n(.*?)```', code, re.DOTALL)
+        all_blocks = re.findall(r'```(\w*)\n(.*?)```', merged_code, re.DOTALL)
+        ext_map = {"html": "index.html", "css": "styles.css", "javascript": "script.js", "python": "main.py", "java": "Main.java"}
         if len(all_blocks) > 1:
-            code_blocks = []
             for idx, (lang_hint, block_content) in enumerate(all_blocks):
                 block_content = block_content.strip()
                 if not block_content:
                     continue
                 lang = lang_hint if lang_hint else detect_language(block_content)
-                ext_map = {"html": "index.html", "css": "styles.css", "javascript": "script.js", "python": "main.py", "java": "Main.java"}
-                filename = ext_map.get(lang, f"file_{idx + 1}.{lang}")
-                block = f"### `{filename}`\n\n```{lang}\n{block_content}\n```"
-                code_blocks.append(block)
-            code_section = "\n\n---\n\n".join(code_blocks)
+                filename = ext_map.get(lang, f"file_{idx + 1}.{lang or 'txt'}")
+                parsed_files.append({"filename": filename, "content": block_content, "language": lang})
         else:
-            explanation = ""
-            code_content = code
-            if "\n---\n" in code:
-                parts = code.split("\n---\n", 1)
-                code_content = parts[0].strip()
-                if len(parts) > 1:
-                    explanation = parts[1].strip()
-            elif "---" in code:
-                parts = code.split("---", 1)
-                code_content = parts[0].strip()
-                if len(parts) > 1:
-                    explanation = parts[1].strip()
-
+            # Single file fallback
+            code_content = merged_code.split("\n---\n", 1)[0].strip() if "\n---\n" in merged_code else merged_code
             lang = detect_language(code_content)
-            code_section = f"```{lang}\n{code_content}\n```"
-            if explanation:
-                code_section += f"\n\n**Explanation:** {explanation}"
+            parsed_files.append({
+                "filename": ext_map.get(lang, "output.txt"),
+                "content": code_content,
+                "language": lang,
+            })
 
-    final_output = f"""## Approach/Plan
+    return {"parsed_files": parsed_files}
 
-                The task was decomposed into parallel subtasks assigned to specialized coding agents:
-
-                {approach_section}
-
-                All agents respected a shared contract of function signatures to ensure interoperability.
-
-                ## Code
-
-                {code_section}"""
-
-    return {"final_output": final_output}
-
-
-# ─── Parse Sections for Progressive Streaming ─────────────────────────────────
-
-def parse_sections(output: str) -> list[tuple[str, str]]:
-    """Parse the final output into sections for progressive streaming."""
-    sections = []
-    current_section = ""
-    current_content = []
-
-    for line in output.split("\n"):
-        if line.startswith("## "):
-            if current_section and current_content:
-                sections.append((current_section, "\n".join(current_content)))
-            header = line[3:].strip().lower()
-            if "problem" in header:
-                current_section = "problem_understanding"
-            elif "approach" in header or "plan" in header:
-                current_section = "approach"
-            elif "code" in header:
-                current_section = "code"
-            else:
-                current_section = header.replace(" ", "_")
-            current_content = []
-        else:
-            current_content.append(line)
-
-    if current_section and current_content:
-        sections.append((current_section, "\n".join(current_content)))
-
-    return sections

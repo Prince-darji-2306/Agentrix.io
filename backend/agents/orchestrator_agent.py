@@ -9,30 +9,69 @@ from langgraph.graph import StateGraph, END
 # ─── Parallel Orchestrator (2 Researchers + Aggregator) ──────────────────────
 
 def orchestrator_node(state: OrchestratorState):
-    """Creates exactly 2 researcher subtasks and 1 writer subtask."""
+    """Analyzes the task and creates 2 researcher subtasks with different perspectives + 1 aggregator."""
     task = state["original_task"]
+    llm = get_llm(temperature=0.3)
+
+    prompt = f"""You are a task decomposer. Your job is to analyze the given task and break it into exactly 2 research assignments with different perspectives, plus 1 aggregation task.
+
+IMPORTANT RULES:
+- The context provided is ONLY for your background understanding. Do NOT include it in your output.
+- Each researcher gets a DIFFERENT angle/perspective on the task.
+- Researcher 1 should focus on facts, data, core concepts, and established knowledge.
+- Researcher 2 should focus on alternative viewpoints, debates, controversies, and edge cases.
+- Keep descriptions concise but specific to each researcher's angle.
+- Output ONLY valid JSON.
+
+Task: {task}
+
+Respond in EXACTLY this JSON format (no markdown, no backticks):
+{{
+  "researcher_1": "Specific research assignment for Researcher 1 focusing on core facts and data",
+  "researcher_2": "Specific research assignment for Researcher 2 focusing on alternative perspectives and debates"
+}}"""
+
+    response = llm.invoke([
+        SystemMessage(content="You are a task decomposer. Output only valid JSON."),
+        HumanMessage(content=prompt),
+    ])
+
+    try:
+        content = response.content.strip()
+        if content.startswith("```json"):
+            content = content.replace("```json", "", 1)
+        if content.endswith("```"):
+            content = content[:-3]
+        content = content.strip()
+        parsed = json.loads(content)
+        r1_desc = parsed.get("researcher_1", f"Comprehensive research on: {task}")
+        r2_desc = parsed.get("researcher_2", f"Alternative perspectives on: {task}")
+    except Exception:
+        r1_desc = f"Comprehensive research on: {task}. Gather facts, data, background information, and existing analysis from reliable sources."
+        r2_desc = f"Alternative perspectives and debates on: {task}. Identify conflicting viewpoints, controversies, gaps in knowledge, and complementary information."
+
     subtasks = [
         {
             "id": 1,
-            "description": f"Comprehensive research on: {task}. Gather facts, data, background information, and existing analysis from reliable sources.",
+            "description": r1_desc,
             "agent_type": "researcher",
             "result": None,
         },
         {
             "id": 2,
-            "description": f"Alternative perspectives and debates on: {task}. Identify conflicting viewpoints, controversies, gaps in knowledge, and complementary information.",
+            "description": r2_desc,
             "agent_type": "researcher",
             "result": None,
         },
         {
             "id": 3,
-            "description": "Synthesize findings into a comprehensive final report with the required 7-section structure.",
+            "description": "Synthesize findings from both researchers into a comprehensive final report with the required 7-section structure.",
             "agent_type": "aggregator",
             "result": None,
         },
     ]
     logs = state.get("step_logs", [])
-    logs.append(f"🎯 Orchestrator created {len(subtasks)} subtasks (2x researcher + aggregator)")
+    logs.append(f"🎯 Orchestrator decomposed task into {len(subtasks)} subtasks (2x researcher + aggregator)")
     return {"subtasks": subtasks, "step_logs": logs}
 
 

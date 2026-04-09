@@ -41,8 +41,8 @@ async def classify_query(task: str) -> tuple[str, str, str]:
         Query: {task}
 
         Categories:
-        - standard: Simple factual questions, greetings, quick calculations, single-step tasks
-        - deep_research: Questions requiring multi-perspective research, analysis, comparisons, explanations of complex topics
+        - standard: Simple factual as well as the Detailed questions, greetings, quick calculations, single-step as well as multi step tasks. Use this In most of normal QA.
+        - deep_research: Questions requiring very hard multi-perspective research, analysis, comparisons, explanations of complex topics, if the topic needs very good research then select this mode.
         - code: Requests to write, implement, debug, or generate code, algorithms, data structures
 
         Respond in EXACTLY this format:
