@@ -22,6 +22,11 @@ export interface ChatMessage {
   };
   pdfs?: string[];
   conversationId?: string; // Backend conversation_id for this message pair
+  whatHappened?: {
+    decomposition: string;
+    researcher1: string;
+    researcher2: string;
+  };
 }
 
 export interface ChatSession {
@@ -98,6 +103,11 @@ interface AppState {
   clearAllChats: () => void;
   isHistoryOpen: boolean;
   setIsHistoryOpen: (v: boolean) => void;
+  // Coding Panel state
+  codingPanelOpen: boolean;
+  setCodingPanelOpen: (v: boolean) => void;
+  selectedCodingAgentId: string | null;
+  setSelectedCodingAgentId: (id: string | null) => void;
   // Backend conversation tracking
   conversationId: string | null;
   setConversationId: (id: string | null) => void;
@@ -218,7 +228,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setGraphNodes: (nodes) => set({ graphNodes: nodes }),
   graphEdges: [],
   setGraphEdges: (edges) => set({ graphEdges: edges }),
-  clearGraphData: () => set({ graphNodes: [], graphEdges: [] }),
+  clearGraphData: () => set({ graphNodes: [], graphEdges: [], codingPanelOpen: false, selectedCodingAgentId: null }),
   upsertGraphNode: (node) => set((s) => {
     const idx = s.graphNodes.findIndex(n => n.id === node.id);
     if (idx >= 0) {
@@ -304,9 +314,30 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   isHistoryOpen: false,
   setIsHistoryOpen: (v) => set({ isHistoryOpen: v }),
+  // Coding Panel state
+  codingPanelOpen: false,
+  setCodingPanelOpen: (v) => set({ codingPanelOpen: v }),
+  selectedCodingAgentId: null,
+  setSelectedCodingAgentId: (id) => set({ selectedCodingAgentId: id }),
   // Backend conversation tracking
   conversationId: null,
-  setConversationId: (id) => set({ conversationId: id }),
+  setConversationId: (id) => set((state) => {
+    // Also persist conversation ID to the current chat session if it exists
+    if (state.currentChatId && id) {
+      const updatedSessions = state.chatSessions.map((session) =>
+        session.id === state.currentChatId
+          ? { ...session, backendConversationId: id, updatedAt: new Date() }
+          : session
+      );
+      try {
+        localStorage.setItem("agentrix_chat_history", JSON.stringify(updatedSessions));
+      } catch (e) {
+        console.warn("Failed to persist conversation ID to chat session:", e);
+      }
+      return { conversationId: id, chatSessions: updatedSessions };
+    }
+    return { conversationId: id };
+  }),
   // Auth state
   userId: typeof window !== "undefined" ? localStorage.getItem("agentrix_user_id") : null,
   userDisplayName: typeof window !== "undefined" ? localStorage.getItem("agentrix_display_name") : null,

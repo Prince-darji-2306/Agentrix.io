@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { ChatMessage as ChatMessageType } from "@/lib/store";
 import ConfidenceBar from "./ConfidenceBar";
 import { ChevronDown, ChevronUp, Wrench, RotateCcw, Layers, CheckCircle2, Copy, Check, FileText } from "lucide-react";
@@ -18,6 +18,576 @@ const MODE_LABELS: Record<string, { short: string; color: string }> = {
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+// ─── Code Pipeline Phase UI ─────────────────────────────────────────────────
+
+interface CodePipelinePhaseData {
+  type: "code_pipeline_phase";
+  phase: "problem" | "approach" | "code" | "final";
+  problemUnderstanding: string;
+  approach: string;
+  code: string;
+  finalResult: string;
+  skipTyping?: boolean; // When true (loading from history), skip typing animation
+}
+
+// ─── Code Pipeline Phase UI ─────────────────────────────────────────────────
+
+function CodePipelinePhaseUI({ data }: { data: CodePipelinePhaseData }) {
+  const { phase, problemUnderstanding, approach, code, skipTyping } = data;
+
+  // Always call hooks - pass skipTyping to avoid unnecessary animations
+  const problemTyping = useTypingAnimation(problemUnderstanding, 3, skipTyping ?? false);
+  const approachTyping = useTypingAnimation(approach, 3, skipTyping ?? false);
+  const codeTyping = useTypingAnimation(code, 2, skipTyping ?? false);
+
+  // Cursor component for typing animation
+  const TypingCursor = ({ isActive }: { isActive: boolean }) => (
+    <span className={isActive ? "inline-block w-1.5 h-3 bg-primary/60 animate-pulse ml-0.5" : ""} />
+  );
+
+  // ─── Problem Section ──────────────────────────────────────────────────────
+  if (phase === "problem") {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="w-1.5 h-1.5 bg-chart-1 animate-pulse" />
+          <span className="text-[10px] font-mono tracking-widest text-chart-1/80 uppercase">
+            Problem Understanding
+          </span>
+        </div>
+        <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+            {problemTyping.displayedText}
+          </ReactMarkdown>
+          <TypingCursor isActive={!problemTyping.isComplete} />
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Approach Section (problem + approach accumulate) ─────────────────────
+  if (phase === "approach") {
+    return (
+      <div className="space-y-4">
+        {/* Problem Understanding */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-1.5 h-1.5 bg-chart-1" />
+            <span className="text-[10px] font-mono tracking-widest text-chart-1/80 uppercase">
+              Problem Understanding
+            </span>
+          </div>
+          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+              {problemTyping.displayedText}
+            </ReactMarkdown>
+          </div>
+        </div>
+
+        {/* Approach/Plan */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-1.5 h-1.5 bg-chart-3 animate-pulse" />
+            <span className="text-[10px] font-mono tracking-widest text-chart-3/80 uppercase">
+              Approach / Plan
+            </span>
+          </div>
+          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+              {approachTyping.displayedText}
+            </ReactMarkdown>
+            <TypingCursor isActive={!approachTyping.isComplete} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Code Section (all sections shown) ───────────────────────────────────
+  if (phase === "code") {
+    return (
+      <div className="space-y-4">
+        {/* Problem Understanding */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-1.5 h-1.5 bg-chart-1" />
+            <span className="text-[10px] font-mono tracking-widest text-chart-1/80 uppercase">
+              Problem Understanding
+            </span>
+          </div>
+          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+              {problemTyping.displayedText}
+            </ReactMarkdown>
+          </div>
+        </div>
+
+        {/* Approach/Plan */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-1.5 h-1.5 bg-chart-3" />
+            <span className="text-[10px] font-mono tracking-widest text-chart-3/80 uppercase">
+              Approach / Plan
+            </span>
+          </div>
+          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+              {approachTyping.displayedText}
+            </ReactMarkdown>
+          </div>
+        </div>
+
+        {/* Code Section */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-1.5 h-1.5 bg-chart-2 animate-pulse" />
+            <span className="text-[10px] font-mono tracking-widest text-chart-2/80 uppercase">
+              Implementation
+            </span>
+          </div>
+          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+              {codeTyping.displayedText}
+            </ReactMarkdown>
+            <TypingCursor isActive={!codeTyping.isComplete} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Final Section (all complete) ────────────────────────────────────────
+  if (phase === "final") {
+    return (
+      <div className="space-y-4">
+        {/* Problem Understanding */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-1.5 h-1.5 bg-chart-1" />
+            <span className="text-[10px] font-mono tracking-widest text-chart-1/80 uppercase">
+              Problem Understanding
+            </span>
+          </div>
+          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+              {problemTyping.displayedText}
+            </ReactMarkdown>
+          </div>
+        </div>
+
+        {/* Approach/Plan */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-1.5 h-1.5 bg-chart-3" />
+            <span className="text-[10px] font-mono tracking-widest text-chart-3/80 uppercase">
+              Approach / Plan
+            </span>
+          </div>
+          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+              {approachTyping.displayedText}
+            </ReactMarkdown>
+          </div>
+        </div>
+
+        {/* Code Section */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-1.5 h-1.5 bg-chart-2" />
+            <span className="text-[10px] font-mono tracking-widest text-chart-2/80 uppercase">
+              Implementation
+            </span>
+          </div>
+          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+              {codeTyping.displayedText}
+            </ReactMarkdown>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+// ─── Deep Research Phase UI ───────────────────────────────────────────────────
+
+interface DeepResearchPhaseData {
+  type: "deep_research_phase";
+  phase: "decomposition" | "researching" | "aggregating" | "final";
+  content: string;
+  researcher1: string;
+  researcher2: string;
+  aggregator: string;
+  finalReport: string;
+  finalMeta: {
+    confidence_score: number;
+    logical_consistency: number;
+    critic_feedback: string;
+    serious_mistakes: any[];
+  } | null;
+  skipTyping?: boolean; // When true (loading from history), skip typing animation
+}
+
+// ─── Typing Animation Hook ───────────────────────────────────────────────────
+function useTypingAnimation(fullText: string, speed: number = 2, skipTyping: boolean = false) {
+  // Lazy initialization: if skipTyping, start with full text; otherwise start empty
+  const [displayedText, setDisplayedText] = useState(() => skipTyping ? fullText : "");
+  const [isComplete, setIsComplete] = useState(() => skipTyping || !fullText);
+  const fullTextRef = useRef(fullText);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const indexRef = useRef(0);
+
+  // Reset when fullText changes (only if not skipping)
+  useEffect(() => {
+    // If skipTyping is true, show full text immediately and don't animate
+    if (skipTyping) {
+      setDisplayedText(fullText);
+      setIsComplete(true);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      return;
+    }
+
+    fullTextRef.current = fullText;
+    indexRef.current = 0;
+    setDisplayedText("");
+    setIsComplete(false);
+
+    if (intervalRef.current) clearInterval(intervalRef.current);
+
+    if (!fullText) {
+      setIsComplete(true);
+      return;
+    }
+
+    intervalRef.current = setInterval(() => {
+      indexRef.current += 12; // Type 12 chars at a time for smooth, readable feel
+      if (indexRef.current >= fullText.length) {
+        setDisplayedText(fullText);
+        setIsComplete(true);
+        if (intervalRef.current) clearInterval(intervalRef.current);
+      } else {
+        setDisplayedText(fullText.slice(0, indexRef.current));
+      }
+    }, speed);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [fullText, speed, skipTyping]);
+
+  // If text hasn't changed and is complete, show full text
+  return { displayedText: isComplete ? fullText : displayedText, isComplete };
+}
+
+// ─── Collapsible Previous Phases ─────────────────────────────────────────────
+function PreviousPhasesCollapsible({
+  content,
+  researcher1,
+  researcher2,
+}: {
+  content: string;
+  researcher1: string;
+  researcher2: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 text-[10px] font-mono tracking-widest text-muted-foreground/60 uppercase hover:text-muted-foreground transition-colors"
+      >
+        {isOpen ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        Want to see what happened?
+      </button>
+
+      {isOpen && (
+        <div className="mt-3 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+          {/* Decomposition */}
+          {content && (
+            <div className="space-y-1">
+              <span className="text-[9px] font-mono tracking-widest text-primary/60 uppercase">
+                Task Decomposition
+              </span>
+              <div className="text-[10px] font-mono leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                  {content}
+                </ReactMarkdown>
+              </div>
+            </div>
+          )}
+
+          {/* Researcher Cards */}
+          <div className="grid grid-cols-2 gap-2">
+            {/* Researcher 1 */}
+            <div className="border border-border/50 bg-secondary/20 rounded overflow-hidden">
+              <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/50 bg-secondary/30">
+                <span className="text-[9px]">🔬</span>
+                <span className="text-[9px] font-mono tracking-widest text-foreground/70 uppercase">
+                  Researcher 1
+                </span>
+              </div>
+              <div className="p-2 max-h-[200px] overflow-y-auto">
+                <div className="text-[10px] font-mono leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                  {researcher1 ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                      {researcher1}
+                    </ReactMarkdown>
+                  ) : (
+                    <span className="text-muted-foreground/30 italic">No data</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Researcher 2 */}
+            <div className="border border-border/50 bg-secondary/20 rounded overflow-hidden">
+              <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/50 bg-secondary/30">
+                <span className="text-[9px]">🔬</span>
+                <span className="text-[9px] font-mono tracking-widest text-foreground/70 uppercase">
+                  Researcher 2
+                </span>
+              </div>
+              <div className="p-2 max-h-[200px] overflow-y-auto">
+                <div className="text-[10px] font-mono leading-relaxed whitespace-pre-wrap text-muted-foreground">
+                  {researcher2 ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                      {researcher2}
+                    </ReactMarkdown>
+                  ) : (
+                    <span className="text-muted-foreground/30 italic">No data</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Deep Research Phase UI — Accumulating Content ────────────────────────────
+
+function DeepResearchPhaseUI({ data }: { data: DeepResearchPhaseData }) {
+  const { phase, content, researcher1, researcher2, aggregator, finalReport, finalMeta, skipTyping } = data;
+
+  // Always call hooks (React rules of hooks) - pass skipTyping to avoid unnecessary animations
+  const decomposeTyping = useTypingAnimation(content, 3, skipTyping ?? false);
+  const researcher1Typing = useTypingAnimation(researcher1, 3, skipTyping ?? false);
+  const researcher2Typing = useTypingAnimation(researcher2, 3, skipTyping ?? false);
+  const aggregatorTyping = useTypingAnimation(aggregator, 3, skipTyping ?? false);
+  const finalTyping = useTypingAnimation(finalReport, 3, skipTyping ?? false);
+
+  // ─── Decomposition Section (always shown when content exists) ────────────
+  const DecompositionSection = () => (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="w-1.5 h-1.5 bg-primary" />
+        <span className="text-[10px] font-mono tracking-widest text-primary/80 uppercase">
+          Task Decomposition
+        </span>
+      </div>
+      <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+          {content}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+
+  // ─── Researcher Cards (always shown when either researcher has content) ──
+  const ResearcherCards = () => (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="w-1.5 h-1.5 bg-chart-2" />
+        <span className="text-[10px] font-mono tracking-widest text-chart-2/80 uppercase">
+          Parallel Research
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        {/* Researcher 1 Card */}
+        <div className="border border-border bg-secondary/30 rounded-lg overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-secondary/50">
+            <span className="text-[10px]">🔬</span>
+            <span className="text-[10px] font-mono tracking-widest text-foreground uppercase">
+              Researcher 1
+            </span>
+          </div>
+          <div className="p-3 max-h-[300px] overflow-y-auto">
+            <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap text-foreground">
+              {researcher1 ? (
+                <>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                    {researcher1Typing.displayedText}
+                  </ReactMarkdown>
+                  {!researcher1Typing.isComplete && (
+                    <span className="inline-block w-1.5 h-3 bg-primary/60 animate-pulse ml-0.5" />
+                  )}
+                </>
+              ) : (
+                <span className="text-muted-foreground/50 italic">Researching...</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Researcher 2 Card */}
+        <div className="border border-border bg-secondary/30 rounded-lg overflow-hidden">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-secondary/50">
+            <span className="text-[10px]">🔬</span>
+            <span className="text-[10px] font-mono tracking-widest text-foreground uppercase">
+              Researcher 2
+            </span>
+          </div>
+          <div className="p-3 max-h-[300px] overflow-y-auto">
+            <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap text-foreground">
+              {researcher2 ? (
+                <>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                    {researcher2Typing.displayedText}
+                  </ReactMarkdown>
+                  {!researcher2Typing.isComplete && (
+                    <span className="inline-block w-1.5 h-3 bg-primary/60 animate-pulse ml-0.5" />
+                  )}
+                </>
+              ) : (
+                <span className="text-muted-foreground/50 italic">Researching...</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ─── Collapsible "Want to see what happened?" ────────────────────────────
+  const WhatHappenedCollapsible = () => {
+    if (!content && !researcher1 && !researcher2) return null;
+    return <PreviousPhasesCollapsible content={content} researcher1={researcher1} researcher2={researcher2} />;
+  };
+
+  // ─── Phase 1: Decomposition ──────────────────────────────────────────────
+  if (phase === "decomposition") {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="w-1.5 h-1.5 bg-primary animate-pulse" />
+          <span className="text-[10px] font-mono tracking-widest text-primary/80 uppercase">
+            Task Decomposition
+          </span>
+        </div>
+        <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+            {decomposeTyping.displayedText}
+          </ReactMarkdown>
+          {!decomposeTyping.isComplete && (
+            <span className="inline-block w-1.5 h-3 bg-primary/60 animate-pulse ml-0.5" />
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Phase 2: Researching (decomposition + researchers accumulate) ───────
+  if (phase === "researching") {
+    return (
+      <div className="space-y-4">
+        {/* Decomposition stays visible */}
+        {content && <DecompositionSection />}
+        {/* Researchers appear below */}
+        <ResearcherCards />
+      </div>
+    );
+  }
+
+  // ─── Phase 3: Aggregating (what happened ABOVE aggregator) ───────────────
+  if (phase === "aggregating") {
+    return (
+      <div className="space-y-4">
+        {/* "Want to see what happened?" ABOVE the aggregator content */}
+        <WhatHappenedCollapsible />
+
+        {/* Aggregator content */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-1.5 h-1.5 bg-chart-3 animate-pulse" />
+            <span className="text-[10px] font-mono tracking-widest text-chart-3/80 uppercase">
+              Synthesizing Research
+            </span>
+          </div>
+          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+            {aggregator ? (
+              <>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                  {aggregatorTyping.displayedText}
+                </ReactMarkdown>
+                {!aggregatorTyping.isComplete && (
+                  <span className="inline-block w-1.5 h-3 bg-primary/60 animate-pulse ml-0.5" />
+                )}
+              </>
+            ) : (
+              <span className="text-muted-foreground/50 italic">Synthesizing...</span>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Phase 4: Final Report (what happened ABOVE final) ───────────────────
+  if (phase === "final" && finalReport) {
+    return (
+      <div className="space-y-4">
+        {/* "Want to see what happened?" ABOVE the final report */}
+        <WhatHappenedCollapsible />
+
+        {/* Final report */}
+        <div className="space-y-3">
+          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+              {finalTyping.displayedText}
+            </ReactMarkdown>
+            {!finalTyping.isComplete && (
+              <span className="inline-block w-1.5 h-3 bg-primary/60 animate-pulse ml-0.5" />
+            )}
+          </div>
+          {finalMeta && (
+            <div className="mt-3 pt-3 border-t border-border">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle2 className="w-3 h-3 text-chart-2" />
+                <span className="text-[10px] font-mono tracking-widest text-chart-2/80 uppercase">
+                  Evaluation Metrics
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex items-center gap-2 px-3 py-2 bg-secondary/30 border border-border rounded">
+                  <span className="text-[9px] font-mono text-muted-foreground uppercase">Confidence</span>
+                  <span className="text-[11px] font-mono text-chart-2 ml-auto">{finalMeta.confidence_score}%</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-2 bg-secondary/30 border border-border rounded">
+                  <span className="text-[9px] font-mono text-muted-foreground uppercase">Consistency</span>
+                  <span className="text-[11px] font-mono text-chart-2 ml-auto">{finalMeta.logical_consistency}%</span>
+                </div>
+              </div>
+              {finalMeta.critic_feedback && (
+                <div className="mt-2 px-3 py-2 bg-secondary/30 border border-border rounded">
+                  <p className="text-[9px] font-mono text-muted-foreground uppercase mb-1">Feedback</p>
+                  <p className="text-[11px] font-mono text-foreground">{finalMeta.critic_feedback}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
 
 // Code block with copy button
 function CodeBlock({ children, className }: { children: React.ReactNode; className?: string }) {
@@ -111,7 +681,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
 
   return (
     <div className={cn(
-      "flex gap-3 max-w-3xl mx-auto w-full animate-in fade-in slide-in-from-bottom-2 duration-300",
+      "flex gap-3 w-full animate-in fade-in slide-in-from-bottom-2 duration-300",
       isAssistant ? "flex-row" : "flex-row-reverse"
     )}>
       {/* Avatar */}
@@ -166,9 +736,48 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             ? "bg-card border-border text-foreground"
             : "bg-primary/8 border-primary/25 text-foreground"
         )}>
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-            {message.content}
-          </ReactMarkdown>
+          {(() => {
+            // Check if content is a code pipeline phase JSON
+            try {
+              if (message.content.startsWith('{') && message.content.includes('"type":"code_pipeline_phase"')) {
+                const data: CodePipelinePhaseData = JSON.parse(message.content);
+                // Skip typing if: loading from history (skipTyping already set),
+                // OR generation is complete (message has meta data),
+                // OR we're not currently generating anything
+                const shouldSkipTyping = data.skipTyping || !!message.meta || !isProcessing;
+                data.skipTyping = shouldSkipTyping;
+                return <CodePipelinePhaseUI data={data} />;
+              }
+            } catch {
+              // Not code pipeline JSON, continue to check other types
+            }
+            // Check if content is a deep research phase JSON
+            try {
+              if (message.content.startsWith('{') && message.content.includes('"type":"deep_research_phase"')) {
+                const data: DeepResearchPhaseData = JSON.parse(message.content);
+                // Merge whatHappened from message into the data if available
+                if (message.whatHappened) {
+                  data.researcher1 = message.whatHappened.researcher1 || data.researcher1;
+                  data.researcher2 = message.whatHappened.researcher2 || data.researcher2;
+                  data.content = message.whatHappened.decomposition || data.content;
+                }
+                // Skip typing if: loading from history (skipTyping already set),
+                // OR generation is complete (message has meta data),
+                // OR we're not currently generating anything
+                const shouldSkipTyping = data.skipTyping || !!message.meta || !isProcessing;
+                data.skipTyping = shouldSkipTyping;
+                return <DeepResearchPhaseUI data={data} />;
+              }
+            } catch {
+              // Not JSON, fall through to markdown
+            }
+            // Default: render as markdown
+            return (
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+                {message.content}
+              </ReactMarkdown>
+            );
+          })()}
 
           {/* PDF attachment boxes — shown below message text */}
           {!isAssistant && message.pdfs && message.pdfs.length > 0 && (

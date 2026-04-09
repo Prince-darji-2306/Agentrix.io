@@ -11,6 +11,7 @@ import MemoryPage from "./pages/MemoryPage";
 import ReflectionPage from "./pages/ReflectionPage";
 import LandingPage from "./LandingPage";
 import HistoryPanel from "./HistoryPanel";
+import CodingPanel from "./CodingPanel";
 
 export default function AppShell() {
   const { setActivePage, isHistoryOpen, setIsHistoryOpen } = useAppStore();
@@ -51,6 +52,9 @@ export default function AppShell() {
 
       {/* Global History Panel */}
       <HistoryPanel isOpen={isHistoryOpen} onClose={handleCloseHistory} />
+
+      {/* Global Coding Panel — half-screen overlay for coding agent outputs */}
+      <CodingPanel />
     </div>
   );
 }

@@ -162,13 +162,6 @@ export interface ChatApiResponse {
   message_count: number;
 }
 
-export interface ChatStreamEvent {
-  type: "stream" | "final" | "error";
-  content?: string;
-  answer?: string;
-  tools_used?: { tool: string; args: Record<string, unknown> }[];
-  message?: string;
-}
 
 export interface OrchestratorSubtask {
   id: number;
@@ -213,6 +206,11 @@ export interface ChatResult {
     critic_feedback?: string;
   }; // only present when orchestrator was used
   conversation_id?: string;
+  whatHappened?: {
+    decomposition: string;
+    researcher1: string;
+    researcher2: string;
+  };
 }
 
 // ─── Smart Orchestrator (SSE) ────────────────────────────────────────────────
@@ -220,7 +218,7 @@ export interface ChatResult {
 export type SmartOrchestratorPath = "standard" | "deep_research" | "code";
 
 export interface SmartSSEEvent {
-  type: "route" | "stage" | "node_update" | "chunk" | "plan" | "code_section" | "final" | "done" | "error" | "conversation_id";
+  type: "route" | "stage" | "node_update" | "chunk" | "plan" | "code_section" | "final" | "done" | "error" | "conversation_id" | "content_chunk" | "tool_start" | "tool_end";
   path?: SmartOrchestratorPath;
   reason?: string;
   stage?: string;
@@ -233,8 +231,14 @@ export interface SmartSSEEvent {
   y?: number;
   output?: string | null;
   content?: string;
+  phase?: "initial" | "final";
+  tool_name?: string;
+  tool_args?: Record<string, unknown>;
+  tool_output?: string;
   subtasks?: Array<{ id: number; description: string; agent_type?: string; signatures?: string[] }>;
-  section?: "problem_understanding" | "approach" | "code";
+  section?: "problem_understanding" | "approach" | "code" 
+           | "decomposition" | "researcher_1" | "researcher_2" 
+           | "aggregation";
   result?: string;
   conversation_id?: string;
   meta?: {
@@ -294,12 +298,96 @@ export async function callChatApi(
   return await callChatApiNonStreaming(query, conversationId, pdfs);
 }
 
+// ─── Standard Chat Stream (SSE) ──────────────────────────────────────────────
+
+export interface ChatStreamEvent {
+  type: "token" | "tool_start" | "tool_end" | "done" | "error" | "conversation_id";
+  content?: string;
+  phase?: "initial" | "final";
+  tool_name?: string;
+  tool_args?: Record<string, unknown>;
+  tool_output?: string;
+  answer?: string;
+  tools_used?: { tool: string; args: Record<string, unknown> }[];
+  retrieved_chunks?: unknown[];
+  conversation_id?: string;
+  message?: string;
+}
+
+export async function* callChatApiStream(
+  query: string,
+  conversationId?: string | null,
+  pdfs?: string[]
+): AsyncGenerator<ChatStreamEvent> {
+  const body: Record<string, unknown> = { query };
+  if (conversationId) body.conversation_id = conversationId;
+  if (pdfs) body.pdfs = pdfs;
+
+  console.log("[DEBUG] /chat/stream request body:", JSON.stringify(body));
+
+  const res = await fetch(`${API_BASE}/chat/stream`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  console.log("[DEBUG] /chat/stream response status:", res.status);
+  console.log("[DEBUG] /chat/stream response headers:", Object.fromEntries(res.headers.entries()));
+
+  if (!res.ok || !res.body) {
+    const error = await res.text();
+    console.error("[DEBUG] /chat/stream error response body:", error);
+    throw new Error(`Chat stream error: ${res.status} - ${error}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let eventCount = 0;
+  const allEvents: ChatStreamEvent[] = [];
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      console.log("[DEBUG] /chat/stream reading done. Total events received:", eventCount);
+      console.log("[DEBUG] /chat/stream all received events:", JSON.stringify(allEvents, null, 2));
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+        try {
+          const msg: ChatStreamEvent = JSON.parse(jsonStr);
+          eventCount++;
+          allEvents.push(msg);
+          console.log(`[DEBUG] /chat/stream event #${eventCount} (type: ${msg.type}):`, JSON.stringify(msg));
+          yield msg;
+          // NOTE: Do NOT return early on "done" — the backend sends more events
+          // after the agent's "done" (like conversation_id). Let the stream
+          // close naturally when reader.read() returns done=true.
+        } catch (e) {
+          console.warn("[DEBUG] /chat/stream failed to parse event:", e, "Raw line:", line);
+          // skip malformed lines
+        }
+      }
+    }
+  }
+}
+
 export async function callOrchestratorApi(
   task: string,
   onLog: (log: string) => void,
   conversationId?: string | null,
-  pdfs?: string[]
-): Promise<ChatResult & { orchestratorRaw?: OrchestratorApiResponse }> {
+  pdfs?: string[],
+  onNodeUpdate?: (event: SmartSSEEvent) => void,
+  onContentChunk?: (section: string, content: string) => void
+): Promise<ChatResult & { orchestratorRaw?: OrchestratorApiResponse; whatHappened?: { decomposition: string; researcher1: string; researcher2: string } }> {
   const body: Record<string, unknown> = { task };
   if (conversationId) body.conversation_id = conversationId;
   if (pdfs) body.pdfs = pdfs;
@@ -310,41 +398,102 @@ export async function callOrchestratorApi(
     body: JSON.stringify(body),
   });
 
-  if (!res.ok) {
+  if (!res.ok || !res.body) {
     const error = await res.text();
     throw new Error(`Orchestrator API error: ${res.status} – ${error}`);
   }
 
-  const data: { result: OrchestratorApiResponse; conversation_id?: string } = await res.json();
-  const r = data.result;
+  // Stream SSE events from orchestrator
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
 
-  // Emit logs so the UI can show progress
-  for (const log of r.step_logs ?? []) {
-    onLog(log);
+  let finalResult = "";
+  let finalMeta: any = {};
+  let backendConversationId: string | undefined;
+  let whatHappened = { decomposition: "", researcher1: "", researcher2: "" };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const jsonStr = line.slice(6).trim();
+        if (!jsonStr) continue;
+        try {
+          const event = JSON.parse(jsonStr);
+
+          switch (event.type) {
+            case "plan":
+              // Subtasks created
+              if (onLog) onLog(`Created ${event.subtasks?.length || 0} subtasks`);
+              // Emit decomposition content
+              if (event.subtasks) {
+                const descriptions = event.subtasks
+                  .filter((st: any) => st.agent_type === "researcher")
+                  .map((st: any, i: number) => `- **Researcher ${st.id}:** ${st.description}`)
+                  .join("\n");
+                whatHappened.decomposition = descriptions;
+                if (onContentChunk) onContentChunk("decomposition", descriptions);
+              }
+              break;
+
+            case "content_chunk":
+              if (event.section === "decomposition") {
+                whatHappened.decomposition = event.content || "";
+                if (onContentChunk) onContentChunk("decomposition", event.content);
+              } else if (event.section === "researcher_1") {
+                whatHappened.researcher1 = event.content || "";
+                if (onContentChunk) onContentChunk("researcher_1", event.content);
+              } else if (event.section === "researcher_2") {
+                whatHappened.researcher2 = event.content || "";
+                if (onContentChunk) onContentChunk("researcher_2", event.content);
+              } else if (event.section === "aggregation") {
+                if (onContentChunk) onContentChunk("aggregation", event.content);
+              }
+              break;
+
+            case "final":
+              finalResult = event.result || "";
+              finalMeta = event.meta || {};
+              break;
+
+            case "conversation_id":
+              backendConversationId = event.conversation_id;
+              break;
+
+            case "error":
+              throw new Error(event.message || "Unknown error");
+          }
+        } catch (e) {
+          // skip malformed lines
+        }
+      }
+    }
   }
 
-  // Build rich markdown content from the orchestrator result
-  const subtaskSection = r.subtasks
-    .map(
-      (st) =>
-        `### ${agentEmoji(st.agent_type)} ${capitalize(st.agent_type)} Agent\n**Task:** ${st.description}\n\n${st.result ?? ""}`
-    )
-    .join("\n\n---\n\n");
-
-  const content = `## Final Answer\n\n${r.final_result}`;
+  // Build result
+  const orchestratorRaw = finalMeta.orchestrator_raw || {};
+  const toolsUsed = finalMeta.tools_used || [];
 
   return {
-    content,
+    content: finalResult || "No response received.",
     meta: {
-      confidenceScore: r.critic_confidence ?? 88,
-      reasoningDepth: r.subtasks.length + 1,
-      retryCount: 0,
-      toolsUsed: r.subtasks.map((st) => `${capitalize(st.agent_type)}Agent`),
-      logicalConsistency: r.critic_logical_consistency,
-      criticFeedback: r.critic_feedback,
+      confidenceScore: finalMeta.confidence_score ?? 85,
+      reasoningDepth: toolsUsed.length,
+      retryCount: finalMeta.retry_count ?? 0,
+      toolsUsed,
+      logicalConsistency: finalMeta.logical_consistency,
+      criticFeedback: finalMeta.critic_feedback,
     },
-    orchestratorRaw: { ...r }, // include raw data for graph visualization
-    conversation_id: data.conversation_id,
+    orchestratorRaw,
+    conversation_id: backendConversationId,
+    whatHappened,
   };
 }
 
@@ -485,10 +634,79 @@ export async function generateResponse(
   pdfs?: string[]
 ): Promise<ChatResult> {
   if (mode === "standard") {
-    onIndicator("Analyzing input…");
-    const result = await callChatApi(prompt, conversationId, pdfs);
-    onIndicator("");
-    return result;
+    let initialContent = "";
+    let finalContent = "";
+    let toolsUsed: string[] = [];
+    let backendConversationId: string | undefined;
+
+    // RAF-throttled content update — prevents React render thrashing
+    let pendingContent = "";
+    let rafId: number | null = null;
+    const scheduleUpdate = () => {
+      if (rafId !== null) return; // already scheduled
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (onContentChunk && pendingContent) {
+          onContentChunk("answer", pendingContent);
+        }
+      });
+    };
+
+    try {
+      for await (const event of callChatApiStream(prompt, conversationId, pdfs)) {
+        switch (event.type) {
+          case "token":
+            // Track initial vs final phase separately
+            if (event.content) {
+              if (event.phase === "initial") {
+                initialContent += event.content;
+              } else if (event.phase === "final") {
+                finalContent += event.content;
+              }
+              // Combine both phases for display
+              pendingContent = initialContent + finalContent;
+              scheduleUpdate();
+            }
+            break;
+          case "tool_start":
+            onIndicator(`Using ${event.tool_name}...`);
+            break;
+          case "tool_end":
+            onIndicator(`${event.tool_name} completed`);
+            break;
+          case "done":
+            // Backend now sends combined answer (initial + final), use it directly
+            if (event.answer) {
+              finalContent = event.answer;
+              pendingContent = finalContent;
+              // Update display with combined answer
+              if (rafId !== null) cancelAnimationFrame(rafId);
+              if (onContentChunk) onContentChunk("answer", finalContent);
+            }
+            toolsUsed = event.tools_used?.map((t) => t.tool) ?? [];
+            break;
+          case "conversation_id":
+            backendConversationId = event.conversation_id;
+            break;
+          case "error":
+            throw new Error(event.message || "Unknown error");
+        }
+      }
+    } finally {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      onIndicator("");
+    }
+
+    return {
+      content: finalContent || "No response received.",
+      meta: {
+        confidenceScore: 85,
+        reasoningDepth: 2,
+        retryCount: 0,
+        toolsUsed,
+      },
+      conversation_id: backendConversationId,
+    };
   }
 
   // multi-agent → smart orchestrator with SSE streaming
@@ -505,6 +723,17 @@ export async function generateResponse(
     let detectedPath: string | null = null;
     let codeContent = "";
     let backendConversationId: string | undefined;
+
+    // For standard path via smart orchestrator: incremental accumulation + RAF
+    let standardContent = "";
+    let standardRafId: number | null = null;
+    const scheduleStandardUpdate = () => {
+      if (standardRafId !== null) return;
+      standardRafId = requestAnimationFrame(() => {
+        standardRafId = null;
+        if (onContentChunk) onContentChunk("answer", standardContent);
+      });
+    };
 
     // Deep research thinking indicators
     const deepResearchIndicators = [
@@ -550,6 +779,30 @@ export async function generateResponse(
           case "node_update":
             if (onNodeUpdate) onNodeUpdate(event);
             break;
+          case "content_chunk":
+            // Standard path streaming tokens via smart orchestrator — incremental
+            // Also handle if path not yet detected (race condition protection)
+            if ((detectedPath === "standard" || detectedPath === null) && event.content) {
+              standardContent += event.content;
+              scheduleStandardUpdate();
+            }
+            // Deep research: forward section-specific content chunks
+            if (detectedPath === "deep_research" && event.section && event.content) {
+              if (onContentChunk) {
+                onContentChunk(event.section, event.content);
+              }
+            }
+            break;
+          case "tool_start":
+            if (detectedPath === "standard") {
+              onIndicator(`Using ${event.tool_name}...`);
+            }
+            break;
+          case "tool_end":
+            if (detectedPath === "standard") {
+              onIndicator(`${event.tool_name} completed`);
+            }
+            break;
           case "plan":
             onIndicator("Plan created with subtasks");
             // Show approach/plan content in the chat bubble
@@ -594,11 +847,19 @@ export async function generateResponse(
       }
     } finally {
       if (indicatorInterval) clearInterval(indicatorInterval);
+      if (standardRafId !== null) cancelAnimationFrame(standardRafId);
+      // Final flush for standard path content
+      if (detectedPath === "standard" && standardContent && onContentChunk) {
+        onContentChunk("answer", standardContent);
+      }
       onIndicator("");
     }
 
+    // Use standardContent as fallback if finalResult is empty (can happen with standard path)
+    const finalContent = finalResult || standardContent || "No response received.";
+    
     return {
-      content: finalResult,
+      content: finalContent,
       meta: finalMeta,
       orchestratorRaw,
       conversation_id: backendConversationId,
@@ -622,12 +883,39 @@ export async function generateResponse(
     }
   }, 1500);
 
+  // Capture what_happened from content_chunk events
+  let whatHappened: { decomposition: string; researcher1: string; researcher2: string } = {
+    decomposition: "",
+    researcher1: "",
+    researcher2: "",
+  };
+
+  const handleContentChunk = (section: string, content: string) => {
+    if (section === "decomposition") {
+      whatHappened.decomposition = content;
+    } else if (section === "researcher_1") {
+      whatHappened.researcher1 = content;
+    } else if (section === "researcher_2") {
+      whatHappened.researcher2 = content;
+    }
+    if (onContentChunk) {
+      onContentChunk(section, content);
+    }
+  };
+
   try {
-    let result = await callOrchestratorApi(prompt, (log) => onIndicator(log), conversationId, pdfs);
+    let result = await callOrchestratorApi(prompt, (log) => onIndicator(log), conversationId, pdfs, onNodeUpdate, handleContentChunk);
     if (result.orchestratorRaw) {
       result = {
         ...result,
         content: result.orchestratorRaw.final_result,
+      };
+    }
+    // Include what_happened if we have decomposition
+    if (whatHappened.decomposition) {
+      result = {
+        ...result,
+        whatHappened,
       };
     }
     return result;

@@ -2,10 +2,10 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useAppStore } from "@/lib/store";
-import { generateResponse, callChatApi, type SmartSSEEvent } from "@/lib/api";
+import { generateResponse, type SmartSSEEvent } from "@/lib/api";
 import ChatMessageComp from "../ChatMessage";
 import ToolSelector from "../ToolSelector";
-import { Send, Square, Terminal, AlertCircle, X, Plus } from "lucide-react";
+import { Send, Square, Terminal, AlertCircle, X, Plus, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { nanoid } from "@/lib/nanoid";
 import type { GraphNode, GraphEdge, GraphNodeType } from "@/lib/store";
@@ -49,6 +49,10 @@ export default function ChatPage() {
     clearGraphData,
     conversationId,
     setConversationId,
+    codingPanelOpen,
+    setCodingPanelOpen,
+    setSelectedCodingAgentId,
+    graphNodes,
   } = useAppStore();
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -57,9 +61,20 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // During streaming: use instant scroll to stay in sync with growing content (no jitter)
+  // This keeps the bottom of the message visible as text is added
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatMessages, currentIndicator]);
+    if (isGenerating) {
+      bottomRef.current?.scrollIntoView({ behavior: "instant" });
+    }
+  }, [chatMessages, isGenerating]);
+
+  // When generation completes: smooth scroll to bottom for a nice finish
+  useEffect(() => {
+    if (!isGenerating && chatMessages.length > 0) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [isGenerating, chatMessages.length]);
 
   // Auto-resize textarea
   useEffect(() => {
@@ -236,7 +251,20 @@ export default function ChatPage() {
       if (query) {
         // Only proceed with LLM generation if we have a query
         if (selectedMode === "standard") {
-          const result = await callChatApi(query, conversationId, pdfNames);
+          // Use streaming via generateResponse
+          const result = await generateResponse(
+            query,
+            selectedMode,
+            (indicator) => updateChatMessage(assistantId, { processingIndicator: indicator }),
+            undefined,
+            (section: string, content: string) => {
+              if (section === "answer") {
+                updateChatMessage(assistantId, { content });
+              }
+            },
+            conversationId,
+            pdfNames
+          );
           // Save returned conversation_id for future messages
           if (result.conversation_id) {
             setConversationId(result.conversation_id);
@@ -255,6 +283,15 @@ export default function ChatPage() {
           let approachContent = "";
           let codeContent = "";
 
+          // Deep research phase state
+          let detectedPath = "";
+          let decomposeContent = "";
+          let researcher1Content = "";
+          let researcher2Content = "";
+          let aggregatorContent = "";
+          let finalReportContent = "";
+          let finalMetaContent: any = null;
+
           const result = await generateResponse(
             query,
             selectedMode,
@@ -262,14 +299,18 @@ export default function ChatPage() {
             // onNodeUpdate
             (event: SmartSSEEvent) => {
               if (event.type === "route") {
+                detectedPath = event.path || "";
                 if (event.path === "code") {
                   setGraphEdges(CODE_MODE_EDGES);
+                  // Auto-open the Coding Panel when code route is detected
+                  setCodingPanelOpen(true);
+                  setSelectedCodingAgentId(null); // will auto-select first active
                 } else if (event.path === "standard") {
                   setGraphEdges(STANDARD_MODE_EDGES);
+                } else if (event.path === "deep_research") {
+                  // Deep research edges will be built from orchestratorRaw after completion
+                  setGraphEdges([]);
                 }
-              }
-              if (event.type === "route" && event.path === "deep_research") {
-                // Deep research edges will be built from orchestratorRaw after completion
               }
               if (event.node_id) {
                 upsertGraphNode({
@@ -285,33 +326,111 @@ export default function ChatPage() {
                 });
               }
             },
-            // onContentChunk - handle code section streaming
+            // onContentChunk - handle section streaming
             (section: string, content: string) => {
-              if (section === "problem_understanding") {
+              if (section === "answer") {
+                // Standard mode streaming content
+                updateChatMessage(assistantId, { content });
+              } else if (section === "problem_understanding") {
                 codePhase = "problem";
                 problemContent = content;
-                updateChatMessage(assistantId, {
-                  content: `## Problem Understanding\n\n${problemContent}`,
+                // Send code pipeline phase JSON for typewriter animation
+                const uiContent = JSON.stringify({
+                  type: "code_pipeline_phase",
+                  phase: "problem",
+                  problemUnderstanding: problemContent,
+                  approach: "",
+                  code: "",
+                  finalResult: "",
                 });
+                updateChatMessage(assistantId, { content: uiContent });
               } else if (section === "approach") {
                 codePhase = "approach";
                 approachContent = content;
-                updateChatMessage(assistantId, {
-                  content: `## Problem Understanding\n\n${problemContent}\n\n## Approach/Plan\n\n${approachContent}`,
+                // Send code pipeline phase JSON for typewriter animation
+                const uiContent = JSON.stringify({
+                  type: "code_pipeline_phase",
+                  phase: "approach",
+                  problemUnderstanding: problemContent,
+                  approach: approachContent,
+                  code: "",
+                  finalResult: "",
                 });
+                updateChatMessage(assistantId, { content: uiContent });
               } else if (section === "code") {
                 codePhase = "code";
                 codeContent = content;
-                // Replace entire content with final formatted output
-                const finalOutput = `## Problem Understanding\n\n${problemContent}\n\n## Approach/Plan\n\n${approachContent}\n\n## Code\n\n${codeContent}`;
-                updateChatMessage(assistantId, {
-                  content: finalOutput,
+                // Send code pipeline phase JSON for typewriter animation
+                const uiContent = JSON.stringify({
+                  type: "code_pipeline_phase",
+                  phase: "code",
+                  problemUnderstanding: problemContent,
+                  approach: approachContent,
+                  code: codeContent,
+                  finalResult: "",
                 });
-              } else {
+                updateChatMessage(assistantId, { content: uiContent });
+              }
+              // Deep research sections
+              else if (section === "decomposition") {
+                decomposeContent = content;
+                const uiContent = JSON.stringify({
+                  type: "deep_research_phase",
+                  phase: "decomposition",
+                  content: decomposeContent,
+                  researcher1: researcher1Content,
+                  researcher2: researcher2Content,
+                  aggregator: aggregatorContent,
+                  finalReport: finalReportContent,
+                  finalMeta: finalMetaContent,
+                });
+                updateChatMessage(assistantId, { content: uiContent });
+              }
+              else if (section === "researcher_1") {
+                researcher1Content = content;
+                const uiContent = JSON.stringify({
+                  type: "deep_research_phase",
+                  phase: "researching",
+                  content: decomposeContent,
+                  researcher1: researcher1Content,
+                  researcher2: researcher2Content,
+                  aggregator: aggregatorContent,
+                  finalReport: finalReportContent,
+                  finalMeta: finalMetaContent,
+                });
+                updateChatMessage(assistantId, { content: uiContent });
+              }
+              else if (section === "researcher_2") {
+                researcher2Content = content;
+                const uiContent = JSON.stringify({
+                  type: "deep_research_phase",
+                  phase: "researching",
+                  content: decomposeContent,
+                  researcher1: researcher1Content,
+                  researcher2: researcher2Content,
+                  aggregator: aggregatorContent,
+                  finalReport: finalReportContent,
+                  finalMeta: finalMetaContent,
+                });
+                updateChatMessage(assistantId, { content: uiContent });
+              }
+              else if (section === "aggregation") {
+                aggregatorContent = content;
+                const uiContent = JSON.stringify({
+                  type: "deep_research_phase",
+                  phase: "aggregating",
+                  content: decomposeContent,
+                  researcher1: researcher1Content,
+                  researcher2: researcher2Content,
+                  aggregator: aggregatorContent,
+                  finalReport: finalReportContent,
+                  finalMeta: finalMetaContent,
+                });
+                updateChatMessage(assistantId, { content: uiContent });
+              }
+              else {
                 // Fallback: accumulate content
-                updateChatMessage(assistantId, {
-                  content: content,
-                });
+                updateChatMessage(assistantId, { content });
               }
             },
             conversationId,
@@ -331,14 +450,22 @@ export default function ChatPage() {
           }
 
           updateChatMessage(assistantId, {
-            content: result.content,
             meta: result.meta,
             processingIndicator: undefined,
+            whatHappened: (result as any).whatHappened,
           });
         } else {
-          // deep-research: use orchestrator (non-streaming)
+          // deep-research: use orchestrator with SSE streaming
           setGraphNodes([]);
           setGraphEdges([]);
+
+          // Deep research phase state
+          let decomposeContent = "";
+          let researcher1Content = "";
+          let researcher2Content = "";
+          let aggregatorContent = "";
+          let finalReportContent = "";
+          let finalMetaContent: any = null;
 
           const result = await generateResponse(
             query, 
@@ -347,7 +474,80 @@ export default function ChatPage() {
               updateChatMessage(assistantId, { processingIndicator: indicator });
             },
             undefined,
-            undefined,
+            // onContentChunk - handle section streaming
+            (section: string, content: string) => {
+              if (section === "decomposition") {
+                decomposeContent = content;
+                const uiContent = JSON.stringify({
+                  type: "deep_research_phase",
+                  phase: "decomposition",
+                  content: decomposeContent,
+                  researcher1: researcher1Content,
+                  researcher2: researcher2Content,
+                  aggregator: aggregatorContent,
+                  finalReport: finalReportContent,
+                  finalMeta: finalMetaContent,
+                });
+                updateChatMessage(assistantId, { content: uiContent });
+              }
+              else if (section === "researcher_1") {
+                researcher1Content = content;
+                const uiContent = JSON.stringify({
+                  type: "deep_research_phase",
+                  phase: "researching",
+                  content: decomposeContent,
+                  researcher1: researcher1Content,
+                  researcher2: researcher2Content,
+                  aggregator: aggregatorContent,
+                  finalReport: finalReportContent,
+                  finalMeta: finalMetaContent,
+                });
+                updateChatMessage(assistantId, { content: uiContent });
+              }
+              else if (section === "researcher_2") {
+                researcher2Content = content;
+                const uiContent = JSON.stringify({
+                  type: "deep_research_phase",
+                  phase: "researching",
+                  content: decomposeContent,
+                  researcher1: researcher1Content,
+                  researcher2: researcher2Content,
+                  aggregator: aggregatorContent,
+                  finalReport: finalReportContent,
+                  finalMeta: finalMetaContent,
+                });
+                updateChatMessage(assistantId, { content: uiContent });
+              }
+              else if (section === "aggregation") {
+                aggregatorContent = content;
+                const uiContent = JSON.stringify({
+                  type: "deep_research_phase",
+                  phase: "aggregating",
+                  content: decomposeContent,
+                  researcher1: researcher1Content,
+                  researcher2: researcher2Content,
+                  aggregator: aggregatorContent,
+                  finalReport: finalReportContent,
+                  finalMeta: finalMetaContent,
+                });
+                updateChatMessage(assistantId, { content: uiContent });
+              }
+              else if (section === "answer") {
+                // Final answer content from orchestrator
+                finalReportContent = content;
+                const uiContent = JSON.stringify({
+                  type: "deep_research_phase",
+                  phase: "final",
+                  content: decomposeContent,
+                  researcher1: researcher1Content,
+                  researcher2: researcher2Content,
+                  aggregator: aggregatorContent,
+                  finalReport: finalReportContent,
+                  finalMeta: finalMetaContent,
+                });
+                updateChatMessage(assistantId, { content: uiContent });
+              }
+            },
             conversationId,
             pdfNames
           );
@@ -368,9 +568,9 @@ export default function ChatPage() {
           }
 
           updateChatMessage(assistantId, {
-            content: result.content,
             meta: result.meta,
             processingIndicator: undefined,
+            whatHappened: (result as any).whatHappened,
           });
         }
       } else {
@@ -440,6 +640,23 @@ export default function ChatPage() {
           </span>
         </div>
         <div className="flex items-center gap-3">
+          {/* View Agents button: shown when there is coding graph data */}
+          {graphNodes.some((n) => ["coder_1", "coder_2", "coder_3", "code_planner", "code_aggregator", "code_reviewer"].includes(n.id)) && (
+            <button
+              id="toggle-coding-panel-btn"
+              onClick={() => setCodingPanelOpen(!codingPanelOpen)}
+              title={codingPanelOpen ? "Close agents panel" : "View coding agents"}
+              className={cn(
+                "flex items-center gap-1.5 px-2.5 py-1.5 border text-[10px] font-mono tracking-widest uppercase transition-all duration-150",
+                codingPanelOpen
+                  ? "border-primary/60 bg-primary/10 text-primary hover:bg-primary/15"
+                  : "border-border text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5"
+              )}
+            >
+              <Cpu className="w-3 h-3" />
+              <span>{codingPanelOpen ? "Hide Agents" : "View Agents"}</span>
+            </button>
+          )}
           <button
             onClick={handleNewChat}
             title="New chat"
@@ -455,9 +672,11 @@ export default function ChatPage() {
       </div>
 
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto px-4 py-6">
+      <div className="flex-1 overflow-y-auto py-6">
+        <div className="max-w-3xl mx-auto px-2 sm:px-4">
         {isEmpty ? (
-          <div className="flex flex-col items-center justify-center h-full gap-8 text-center max-w-lg mx-auto">
+          <div className="max-w-3xl mx-auto">
+          <div className="flex flex-col items-center justify-center h-full gap-8 text-center">
             {/* Boot screen */}
             <div className="w-full border border-border bg-card p-6 font-mono text-left space-y-1">
               <p className="text-[9px] tracking-widest text-muted-foreground uppercase">
@@ -479,7 +698,7 @@ export default function ChatPage() {
                 ─────────────────────────────────────────
               </p>
               <div className="flex items-center gap-1.5 mt-1">
-                <span className="text-primary text-[10px]">&gt;</span>
+                <span className="text-primary text-[10px]"></span>
                 <span className="text-[10px] text-foreground">Awaiting input</span>
                 <span className="inline-block w-1.5 h-3.5 bg-primary/80 animate-pulse ml-0.5" />
               </div>
@@ -507,13 +726,14 @@ export default function ChatPage() {
               ))}
             </div>
           </div>
+          </div>
         ) : (
-          <div className="space-y-5 max-w-3xl mx-auto">
+          <div className="max-w-4xl mx-auto space-y-5">
             {chatMessages.map((msg) => (
               <ChatMessageComp key={msg.id} message={msg} />
             ))}
             {isGenerating && currentIndicator && (
-              <div className="max-w-3xl mx-auto w-full animate-in fade-in duration-200">
+              <div className="w-full animate-in fade-in duration-200">
                 <div className="flex items-center gap-2">
                   <span className="w-1.5 h-1.5 bg-primary animate-pulse" />
                   <span className="text-[10px] font-mono tracking-widest text-primary/80 uppercase">
@@ -523,7 +743,7 @@ export default function ChatPage() {
               </div>
             )}
             {error && (
-              <div className="flex gap-3 max-w-3xl mx-auto w-full animate-in fade-in duration-300">
+              <div className="flex gap-3 w-full animate-in fade-in duration-300">
                 <div className="w-7 h-7 flex items-center justify-center border border-destructive/40 text-destructive text-xs font-mono shrink-0">
                   !
                 </div>
@@ -539,11 +759,12 @@ export default function ChatPage() {
             <div ref={bottomRef} />
           </div>
         )}
+        </div>
       </div>
 
-      {/* Input area */}
-      <div className="border-t border-border bg-background px-4 py-3 shrink-0">
-        <div className="max-w-3xl mx-auto flex flex-col gap-2">
+       {/* Input area */}
+       <div className="border-t border-border bg-background px-2 sm:px-4 py-3 shrink-0">
+         <div className="max-w-3xl mx-auto flex flex-col gap-2">
           {/* File Pills */}
           {selectedFiles.length > 0 && (
             <div className="flex flex-wrap gap-2 mb-1">

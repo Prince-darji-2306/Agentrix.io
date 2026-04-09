@@ -65,19 +65,41 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
               });
             }
             if (entry.assistant) {
+              // Use reasoning_mode from backend to determine mode
+              const mode = msg.reasoning_mode === "multi_agent" ? "multi-agent" as const : "standard" as const;
+              const whatHappened = (msg as any).what_happened;
+
+              // If we have what_happened data, construct deep research JSON for UI rendering
+              let assistantContent = entry.assistant;
+              if (whatHappened && whatHappened.decomposition) {
+                assistantContent = JSON.stringify({
+                  type: "deep_research_phase",
+                  phase: "final",
+                  content: whatHappened.decomposition || "",
+                  researcher1: whatHappened.researcher1 || "",
+                  researcher2: whatHappened.researcher2 || "",
+                  aggregator: "",
+                  finalReport: entry.assistant,
+                  finalMeta: null,
+                  skipTyping: true, // Skip typing animation when loading from history
+                });
+              }
+
               addChatMessage({
                 id: `${msg.id}-assistant`,
                 role: "assistant",
-                content: entry.assistant,
-                mode: "standard",
+                content: assistantContent,
+                mode,
                 timestamp: new Date(msg.created_at),
                 conversationId: conv.id,
                 meta: msg.confidence != null ? {
                   confidenceScore: Math.round(msg.confidence * 100),
                   reasoningDepth: 2,
                   retryCount: 0,
-                  toolsUsed: [],
+                  toolsUsed: (entry as any).tools || [],
+                  logicalConsistency: msg.consistency != null ? Math.round(msg.consistency * 100) : undefined,
                 } : undefined,
+                whatHappened,
               });
             }
           }
@@ -111,7 +133,7 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
     if (!confirm("Delete this conversation?")) return;
     try {
       await deleteConversation(id);
-      setConversations((prev) => prev.filter((c) => c.id !== id));
+      setConversations((prev) => prev.filter((c) => c.id === id));
     } catch (err: any) {
       alert(err.message || "Delete failed");
     }
@@ -256,7 +278,7 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
           ) : (
             <div className="space-y-3">
               {conversations.map((conv) => (
-                <button
+                <div
                   key={conv.id}
                   onClick={() => handleSelectConversation(conv)}
                   onKeyDown={(e) => {
@@ -265,6 +287,8 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
                       handleSelectConversation(conv);
                     }
                   }}
+                  role="button"
+                  tabIndex={0}
                   className="group relative w-full p-4 border border-border hover:border-primary/30 bg-card hover:bg-primary/5 transition-all cursor-pointer text-left"
                 >
                   <div className="flex items-start justify-between gap-3">
@@ -350,7 +374,7 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
                       </div>
                     </div>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           )}
