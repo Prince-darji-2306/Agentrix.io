@@ -2,10 +2,11 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useAppStore } from "@/lib/store";
+import { useAgentPanel } from "../AgentPanelContext";
 import { generateResponse, type SmartSSEEvent } from "@/lib/api";
 import ChatMessageComp from "../ChatMessage";
 import ToolSelector from "../ToolSelector";
-import { Send, Square, Terminal, AlertCircle, X, Plus, Cpu } from "lucide-react";
+import { Send, Square, Terminal, AlertCircle, X, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { nanoid } from "@/lib/nanoid";
 import type { GraphNode, GraphEdge, GraphNodeType } from "@/lib/store";
@@ -49,14 +50,11 @@ export default function ChatPage() {
     clearGraphData,
     conversationId,
     setConversationId,
-    codingPanelOpen,
-    setCodingPanelOpen,
-    setSelectedCodingAgentId,
-    graphNodes,
   } = useAppStore();
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const { upsertAgentData, clearAgents, upsertFileData, clearFiles } = useAgentPanel();
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -302,9 +300,6 @@ export default function ChatPage() {
                 detectedPath = event.path || "";
                 if (event.path === "code") {
                   setGraphEdges(CODE_MODE_EDGES);
-                  // Auto-open the Coding Panel when code route is detected
-                  setCodingPanelOpen(true);
-                  setSelectedCodingAgentId(null); // will auto-select first active
                 } else if (event.path === "standard") {
                   setGraphEdges(STANDARD_MODE_EDGES);
                 } else if (event.path === "deep_research") {
@@ -434,7 +429,9 @@ export default function ChatPage() {
               }
             },
             conversationId,
-            pdfNames
+            pdfNames,
+            (id, name, content) => upsertAgentData(id, name, content),
+            (filename, content, language, index, total) => upsertFileData(filename, content, language, index < total - 1)
           );
 
           // Update conversation ID if returned
@@ -549,7 +546,8 @@ export default function ChatPage() {
               }
             },
             conversationId,
-            pdfNames
+            pdfNames,
+            (id, name, content) => upsertAgentData(id, name, content)
           );
 
           // Update conversation ID if returned
@@ -618,10 +616,12 @@ export default function ChatPage() {
 
   const handleNewChat = () => {
     clearGraphData();
+    clearAgents();
+    clearFiles();
     setInput("");
     setError(null);
     setSelectedFiles([]);
-    createChat(); // Create a new empty chat session
+    createChat();
   };
 
   const isEmpty = chatMessages.length === 0;
@@ -640,23 +640,6 @@ export default function ChatPage() {
           </span>
         </div>
         <div className="flex items-center gap-3">
-          {/* View Agents button: shown when there is coding graph data */}
-          {graphNodes.some((n) => ["coder_1", "coder_2", "coder_3", "code_planner", "code_aggregator", "code_reviewer"].includes(n.id)) && (
-            <button
-              id="toggle-coding-panel-btn"
-              onClick={() => setCodingPanelOpen(!codingPanelOpen)}
-              title={codingPanelOpen ? "Close agents panel" : "View coding agents"}
-              className={cn(
-                "flex items-center gap-1.5 px-2.5 py-1.5 border text-[10px] font-mono tracking-widest uppercase transition-all duration-150",
-                codingPanelOpen
-                  ? "border-primary/60 bg-primary/10 text-primary hover:bg-primary/15"
-                  : "border-border text-muted-foreground hover:border-primary/40 hover:text-primary hover:bg-primary/5"
-              )}
-            >
-              <Cpu className="w-3 h-3" />
-              <span>{codingPanelOpen ? "Hide Agents" : "View Agents"}</span>
-            </button>
-          )}
           <button
             onClick={handleNewChat}
             title="New chat"

@@ -218,7 +218,7 @@ export interface ChatResult {
 export type SmartOrchestratorPath = "standard" | "deep_research" | "code";
 
 export interface SmartSSEEvent {
-  type: "route" | "stage" | "node_update" | "chunk" | "plan" | "code_section" | "final" | "done" | "error" | "conversation_id" | "content_chunk" | "tool_start" | "tool_end";
+  type: "route" | "stage" | "node_update" | "chunk" | "plan" | "code_section" | "final" | "done" | "error" | "conversation_id" | "content_chunk" | "tool_start" | "tool_end" | "agent_output" | "file_output";
   path?: SmartOrchestratorPath;
   reason?: string;
   stage?: string;
@@ -241,6 +241,13 @@ export interface SmartSSEEvent {
            | "aggregation";
   result?: string;
   conversation_id?: string;
+  agent_id?: string;
+  agent_name?: string;
+  // file_output fields
+  filename?: string;
+  language?: string;
+  index?: number;
+  total?: number;
   meta?: {
     confidence_score: number;
     logical_consistency: number;
@@ -631,7 +638,9 @@ export async function generateResponse(
   onNodeUpdate?: (event: SmartSSEEvent) => void,
   onContentChunk?: (section: string, content: string) => void,
   conversationId?: string | null,
-  pdfs?: string[]
+  pdfs?: string[],
+  onAgentOutput?: (id: string, name: string, content: string) => void,
+  onFileOutput?: (filename: string, content: string, language: string, index: number, total: number) => void
 ): Promise<ChatResult> {
   if (mode === "standard") {
     let initialContent = "";
@@ -839,6 +848,22 @@ export async function generateResponse(
               if (event.meta.orchestrator_raw) {
                 orchestratorRaw = event.meta.orchestrator_raw;
               }
+            }
+            break;
+          case "agent_output":
+            if (onAgentOutput && event.agent_id && event.agent_name && event.content !== undefined) {
+              onAgentOutput(event.agent_id, event.agent_name, event.content);
+            }
+            break;
+          case "file_output":
+            if (onFileOutput && event.filename && event.content !== undefined) {
+              onFileOutput(
+                event.filename,
+                event.content,
+                event.language || "text",
+                event.index ?? 0,
+                event.total ?? 1
+              );
             }
             break;
           case "error":

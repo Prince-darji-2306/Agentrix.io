@@ -3,8 +3,11 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { ChatMessage as ChatMessageType } from "@/lib/store";
 import ConfidenceBar from "./ConfidenceBar";
-import { ChevronDown, ChevronUp, Wrench, RotateCcw, Layers, CheckCircle2, Copy, Check, FileText } from "lucide-react";
+import { ChevronDown, ChevronUp, Wrench, RotateCcw, Layers, CheckCircle2, Copy, Check, FileText, Cpu, Activity, Code2, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { useAgentPanel } from "./AgentPanelContext";
 
 interface ChatMessageProps {
   message: ChatMessageType;
@@ -16,9 +19,6 @@ const MODE_LABELS: Record<string, { short: string; color: string }> = {
   "deep-research":{ short: "DRS",  color: "text-chart-2 border-chart-2/40" },
 };
 
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-
 // ─── Code Pipeline Phase UI ─────────────────────────────────────────────────
 
 interface CodePipelinePhaseData {
@@ -28,188 +28,119 @@ interface CodePipelinePhaseData {
   approach: string;
   code: string;
   finalResult: string;
-  skipTyping?: boolean; // When true (loading from history), skip typing animation
+  skipTyping?: boolean;
 }
 
-// ─── Code Pipeline Phase UI ─────────────────────────────────────────────────
+function CodePipelinePhaseUI({ data, assistantId, isProcessing }: { data: CodePipelinePhaseData, assistantId: string, isProcessing: boolean }) {
+  const { phase, problemUnderstanding, approach, skipTyping } = data;
+  const { isPanelOpen, setIsPanelOpen, agents } = useAgentPanel();
 
-function CodePipelinePhaseUI({ data }: { data: CodePipelinePhaseData }) {
-  const { phase, problemUnderstanding, approach, code, skipTyping } = data;
-
-  // Always call hooks - pass skipTyping to avoid unnecessary animations
   const problemTyping = useTypingAnimation(problemUnderstanding, 3, skipTyping ?? false);
   const approachTyping = useTypingAnimation(approach, 3, skipTyping ?? false);
-  const codeTyping = useTypingAnimation(code, 2, skipTyping ?? false);
 
-  // Cursor component for typing animation
-  const TypingCursor = ({ isActive }: { isActive: boolean }) => (
-    <span className={isActive ? "inline-block w-1.5 h-3 bg-primary/60 animate-pulse ml-0.5" : ""} />
+  const hasAgents = Object.keys(agents).length > 0;
+  const isDropdownActive = isPanelOpen || (isProcessing && phase === "code");
+
+  return (
+    <div className="space-y-4">
+      {(phase === "problem" || phase === "approach" || phase === "code" || phase === "final") && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className={cn("w-1.5 h-1.5 bg-chart-1", phase === "problem" && "animate-pulse")} />
+            <span className="text-[10px] font-mono tracking-widest text-chart-1/80 uppercase">
+              Problem Understanding
+            </span>
+          </div>
+          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+              {problemTyping.displayedText}
+            </ReactMarkdown>
+            {phase === "problem" && !problemTyping.isComplete && (
+              <span className="inline-block w-1.5 h-3 bg-primary/60 animate-pulse ml-0.5" />
+            )}
+          </div>
+        </div>
+      )}
+
+      {(phase === "approach" || phase === "code" || phase === "final") && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className={cn("w-1.5 h-1.5 bg-chart-3", phase === "approach" && "animate-pulse")} />
+            <span className="text-[10px] font-mono tracking-widest text-chart-3/80 uppercase">
+              Approach / Plan
+            </span>
+          </div>
+          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
+              {approachTyping.displayedText}
+            </ReactMarkdown>
+            {phase === "approach" && !approachTyping.isComplete && (
+              <span className="inline-block w-1.5 h-3 bg-primary/60 animate-pulse ml-0.5" />
+            )}
+          </div>
+        </div>
+      )}
+
+      {(phase === "code" || phase === "final" || hasAgents) && (
+        <div className="pt-2 border-t border-border/40 mt-2">
+          <button
+            onClick={() => setIsPanelOpen(!isPanelOpen)}
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 border transition-all duration-200 group",
+              isDropdownActive 
+                ? "bg-primary/10 border-primary/40 text-primary" 
+                : "bg-secondary/30 border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground"
+            )}
+          >
+            {isProcessing && phase === "code" ? (
+              <Activity className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Cpu className="w-3.5 h-3.5" />
+            )}
+            <span className="text-[10px] font-mono tracking-widest uppercase">
+              {isProcessing && phase === "code" ? "Agents Working..." : "View Agents"}
+            </span>
+            {isPanelOpen ? <ChevronUp className="w-3 h-3 ml-1" /> : <ChevronDown className="w-3 h-3 ml-1" />}
+          </button>
+        </div>
+      )}
+    </div>
   );
+}
 
-  // ─── Problem Section ──────────────────────────────────────────────────────
-  if (phase === "problem") {
-    return (
-      <div className="space-y-2">
-        <div className="flex items-center gap-2 mb-2">
-          <span className="w-1.5 h-1.5 bg-chart-1 animate-pulse" />
-          <span className="text-[10px] font-mono tracking-widest text-chart-1/80 uppercase">
-            Problem Understanding
+// ─── Code Complete Card ──────────────────────────────────────────────────────
+
+interface CodeCompleteData {
+  type: "code_complete";
+  file_count: number;
+  filenames: string[];
+}
+
+function CodeCompleteCard({ data }: { data: CodeCompleteData }) {
+  const { setIsPanelOpen } = useAgentPanel();
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <CheckCircle2 className="w-3.5 h-3.5 text-chart-2" />
+        <span className="text-[11px] font-mono text-chart-2 uppercase tracking-widest">Code generation complete</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {data.filenames.map((f) => (
+          <span key={f} className="flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/25 text-[10px] font-mono text-primary">
+            <Code2 className="w-2.5 h-2.5" />
+            {f}
           </span>
-        </div>
-        <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-            {problemTyping.displayedText}
-          </ReactMarkdown>
-          <TypingCursor isActive={!problemTyping.isComplete} />
-        </div>
+        ))}
       </div>
-    );
-  }
-
-  // ─── Approach Section (problem + approach accumulate) ─────────────────────
-  if (phase === "approach") {
-    return (
-      <div className="space-y-4">
-        {/* Problem Understanding */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-1.5 h-1.5 bg-chart-1" />
-            <span className="text-[10px] font-mono tracking-widest text-chart-1/80 uppercase">
-              Problem Understanding
-            </span>
-          </div>
-          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-              {problemTyping.displayedText}
-            </ReactMarkdown>
-          </div>
-        </div>
-
-        {/* Approach/Plan */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-1.5 h-1.5 bg-chart-3 animate-pulse" />
-            <span className="text-[10px] font-mono tracking-widest text-chart-3/80 uppercase">
-              Approach / Plan
-            </span>
-          </div>
-          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-              {approachTyping.displayedText}
-            </ReactMarkdown>
-            <TypingCursor isActive={!approachTyping.isComplete} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Code Section (all sections shown) ───────────────────────────────────
-  if (phase === "code") {
-    return (
-      <div className="space-y-4">
-        {/* Problem Understanding */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-1.5 h-1.5 bg-chart-1" />
-            <span className="text-[10px] font-mono tracking-widest text-chart-1/80 uppercase">
-              Problem Understanding
-            </span>
-          </div>
-          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-              {problemTyping.displayedText}
-            </ReactMarkdown>
-          </div>
-        </div>
-
-        {/* Approach/Plan */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-1.5 h-1.5 bg-chart-3" />
-            <span className="text-[10px] font-mono tracking-widest text-chart-3/80 uppercase">
-              Approach / Plan
-            </span>
-          </div>
-          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-              {approachTyping.displayedText}
-            </ReactMarkdown>
-          </div>
-        </div>
-
-        {/* Code Section */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-1.5 h-1.5 bg-chart-2 animate-pulse" />
-            <span className="text-[10px] font-mono tracking-widest text-chart-2/80 uppercase">
-              Implementation
-            </span>
-          </div>
-          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-              {codeTyping.displayedText}
-            </ReactMarkdown>
-            <TypingCursor isActive={!codeTyping.isComplete} />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ─── Final Section (all complete) ────────────────────────────────────────
-  if (phase === "final") {
-    return (
-      <div className="space-y-4">
-        {/* Problem Understanding */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-1.5 h-1.5 bg-chart-1" />
-            <span className="text-[10px] font-mono tracking-widest text-chart-1/80 uppercase">
-              Problem Understanding
-            </span>
-          </div>
-          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-              {problemTyping.displayedText}
-            </ReactMarkdown>
-          </div>
-        </div>
-
-        {/* Approach/Plan */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-1.5 h-1.5 bg-chart-3" />
-            <span className="text-[10px] font-mono tracking-widest text-chart-3/80 uppercase">
-              Approach / Plan
-            </span>
-          </div>
-          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-              {approachTyping.displayedText}
-            </ReactMarkdown>
-          </div>
-        </div>
-
-        {/* Code Section */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="w-1.5 h-1.5 bg-chart-2" />
-            <span className="text-[10px] font-mono tracking-widest text-chart-2/80 uppercase">
-              Implementation
-            </span>
-          </div>
-          <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
-              {codeTyping.displayedText}
-            </ReactMarkdown>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return null;
+      <button
+        onClick={() => setIsPanelOpen(true)}
+        className="flex items-center gap-2 px-3 py-1.5 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 transition-all duration-200"
+      >
+        <ExternalLink className="w-3 h-3" />
+        <span className="text-[10px] font-mono tracking-widest uppercase">View in Panel</span>
+      </button>
+    </div>
+  );
 }
 
 // ─── Deep Research Phase UI ───────────────────────────────────────────────────
@@ -228,21 +159,17 @@ interface DeepResearchPhaseData {
     critic_feedback: string;
     serious_mistakes: any[];
   } | null;
-  skipTyping?: boolean; // When true (loading from history), skip typing animation
+  skipTyping?: boolean;
 }
 
-// ─── Typing Animation Hook ───────────────────────────────────────────────────
 function useTypingAnimation(fullText: string, speed: number = 2, skipTyping: boolean = false) {
-  // Lazy initialization: if skipTyping, start with full text; otherwise start empty
   const [displayedText, setDisplayedText] = useState(() => skipTyping ? fullText : "");
   const [isComplete, setIsComplete] = useState(() => skipTyping || !fullText);
   const fullTextRef = useRef(fullText);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const indexRef = useRef(0);
 
-  // Reset when fullText changes (only if not skipping)
   useEffect(() => {
-    // If skipTyping is true, show full text immediately and don't animate
     if (skipTyping) {
       setDisplayedText(fullText);
       setIsComplete(true);
@@ -263,7 +190,7 @@ function useTypingAnimation(fullText: string, speed: number = 2, skipTyping: boo
     }
 
     intervalRef.current = setInterval(() => {
-      indexRef.current += 12; // Type 12 chars at a time for smooth, readable feel
+      indexRef.current += 12;
       if (indexRef.current >= fullText.length) {
         setDisplayedText(fullText);
         setIsComplete(true);
@@ -278,11 +205,9 @@ function useTypingAnimation(fullText: string, speed: number = 2, skipTyping: boo
     };
   }, [fullText, speed, skipTyping]);
 
-  // If text hasn't changed and is complete, show full text
   return { displayedText: isComplete ? fullText : displayedText, isComplete };
 }
 
-// ─── Collapsible Previous Phases ─────────────────────────────────────────────
 function PreviousPhasesCollapsible({
   content,
   researcher1,
@@ -306,7 +231,6 @@ function PreviousPhasesCollapsible({
 
       {isOpen && (
         <div className="mt-3 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
-          {/* Decomposition */}
           {content && (
             <div className="space-y-1">
               <span className="text-[9px] font-mono tracking-widest text-primary/60 uppercase">
@@ -320,9 +244,7 @@ function PreviousPhasesCollapsible({
             </div>
           )}
 
-          {/* Researcher Cards */}
           <div className="grid grid-cols-2 gap-2">
-            {/* Researcher 1 */}
             <div className="border border-border/50 bg-secondary/20 rounded overflow-hidden">
               <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/50 bg-secondary/30">
                 <span className="text-[9px]">🔬</span>
@@ -343,7 +265,6 @@ function PreviousPhasesCollapsible({
               </div>
             </div>
 
-            {/* Researcher 2 */}
             <div className="border border-border/50 bg-secondary/20 rounded overflow-hidden">
               <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/50 bg-secondary/30">
                 <span className="text-[9px]">🔬</span>
@@ -370,19 +291,15 @@ function PreviousPhasesCollapsible({
   );
 }
 
-// ─── Deep Research Phase UI — Accumulating Content ────────────────────────────
-
 function DeepResearchPhaseUI({ data }: { data: DeepResearchPhaseData }) {
   const { phase, content, researcher1, researcher2, aggregator, finalReport, finalMeta, skipTyping } = data;
 
-  // Always call hooks (React rules of hooks) - pass skipTyping to avoid unnecessary animations
   const decomposeTyping = useTypingAnimation(content, 3, skipTyping ?? false);
   const researcher1Typing = useTypingAnimation(researcher1, 3, skipTyping ?? false);
   const researcher2Typing = useTypingAnimation(researcher2, 3, skipTyping ?? false);
   const aggregatorTyping = useTypingAnimation(aggregator, 3, skipTyping ?? false);
   const finalTyping = useTypingAnimation(finalReport, 3, skipTyping ?? false);
 
-  // ─── Decomposition Section (always shown when content exists) ────────────
   const DecompositionSection = () => (
     <div className="space-y-2">
       <div className="flex items-center gap-2 mb-2">
@@ -399,7 +316,6 @@ function DeepResearchPhaseUI({ data }: { data: DeepResearchPhaseData }) {
     </div>
   );
 
-  // ─── Researcher Cards (always shown when either researcher has content) ──
   const ResearcherCards = () => (
     <div className="space-y-2">
       <div className="flex items-center gap-2 mb-2">
@@ -409,7 +325,6 @@ function DeepResearchPhaseUI({ data }: { data: DeepResearchPhaseData }) {
         </span>
       </div>
       <div className="grid grid-cols-2 gap-3">
-        {/* Researcher 1 Card */}
         <div className="border border-border bg-secondary/30 rounded-lg overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-secondary/50">
             <span className="text-[10px]">🔬</span>
@@ -435,7 +350,6 @@ function DeepResearchPhaseUI({ data }: { data: DeepResearchPhaseData }) {
           </div>
         </div>
 
-        {/* Researcher 2 Card */}
         <div className="border border-border bg-secondary/30 rounded-lg overflow-hidden">
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-secondary/50">
             <span className="text-[10px]">🔬</span>
@@ -464,13 +378,11 @@ function DeepResearchPhaseUI({ data }: { data: DeepResearchPhaseData }) {
     </div>
   );
 
-  // ─── Collapsible "Want to see what happened?" ────────────────────────────
   const WhatHappenedCollapsible = () => {
     if (!content && !researcher1 && !researcher2) return null;
     return <PreviousPhasesCollapsible content={content} researcher1={researcher1} researcher2={researcher2} />;
   };
 
-  // ─── Phase 1: Decomposition ──────────────────────────────────────────────
   if (phase === "decomposition") {
     return (
       <div className="space-y-2">
@@ -492,26 +404,19 @@ function DeepResearchPhaseUI({ data }: { data: DeepResearchPhaseData }) {
     );
   }
 
-  // ─── Phase 2: Researching (decomposition + researchers accumulate) ───────
   if (phase === "researching") {
     return (
       <div className="space-y-4">
-        {/* Decomposition stays visible */}
         {content && <DecompositionSection />}
-        {/* Researchers appear below */}
         <ResearcherCards />
       </div>
     );
   }
 
-  // ─── Phase 3: Aggregating (what happened ABOVE aggregator) ───────────────
   if (phase === "aggregating") {
     return (
       <div className="space-y-4">
-        {/* "Want to see what happened?" ABOVE the aggregator content */}
         <WhatHappenedCollapsible />
-
-        {/* Aggregator content */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 mb-2">
             <span className="w-1.5 h-1.5 bg-chart-3 animate-pulse" />
@@ -538,14 +443,10 @@ function DeepResearchPhaseUI({ data }: { data: DeepResearchPhaseData }) {
     );
   }
 
-  // ─── Phase 4: Final Report (what happened ABOVE final) ───────────────────
   if (phase === "final" && finalReport) {
     return (
       <div className="space-y-4">
-        {/* "Want to see what happened?" ABOVE the final report */}
         <WhatHappenedCollapsible />
-
-        {/* Final report */}
         <div className="space-y-3">
           <div className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
@@ -589,7 +490,6 @@ function DeepResearchPhaseUI({ data }: { data: DeepResearchPhaseData }) {
   return null;
 }
 
-// Code block with copy button
 function CodeBlock({ children, className }: { children: React.ReactNode; className?: string }) {
   const [copied, setCopied] = useState(false);
   const codeRef = React.useRef<HTMLDivElement>(null);
@@ -638,7 +538,6 @@ function CodeBlock({ children, className }: { children: React.ReactNode; classNa
   );
 }
 
-// Make the text match the old style but parsed robustly
 const MarkdownComponents: any = {
   h1: ({ node, ...props }: any) => <h1 className="text-sm font-mono font-bold text-foreground uppercase tracking-widest mt-2 mb-1" {...props} />,
   h2: ({ node, ...props }: any) => <h2 className="text-xs font-mono font-bold text-foreground uppercase tracking-widest mt-3 mb-1 border-b border-border pb-1" {...props} />,
@@ -651,15 +550,12 @@ const MarkdownComponents: any = {
     if (inline) {
       return <code className="bg-secondary border border-border px-1 py-0.5 text-[10px] text-chart-1 font-mono rounded-none" {...props}>{children}</code>;
     }
-    // Block code - wrap in CodeBlock with copy button
     return <CodeBlock className={className}>{children}</CodeBlock>;
   },
   pre: ({ node, ...props }: any) => <pre className="m-0 p-0 bg-transparent" {...props} />,
   ul: ({ node, ...props }: any) => <ul className="list-none my-1 space-y-0.5" {...props} />,
   ol: ({ node, ...props }: any) => <ol className="list-decimal list-inside my-1 space-y-0.5 font-semibold text-muted-foreground" {...props} />,
   li: ({ node, ...props }: any) => {
-    // If it's an ordered list, it uses decimals automatically via Tailwind list-decimal.
-    // If it's unordered, we can prepend our bullet.
     return (
       <li className="font-normal text-foreground leading-relaxed flex gap-2">
         <span className="text-primary shrink-0 opacity-50">·</span>
@@ -684,7 +580,6 @@ export default function ChatMessage({ message }: ChatMessageProps) {
       "flex gap-3 w-full animate-in fade-in slide-in-from-bottom-2 duration-300",
       isAssistant ? "flex-row" : "flex-row-reverse"
     )}>
-      {/* Avatar */}
       <div className={cn(
         "w-7 h-7 flex items-center justify-center border shrink-0 mt-0.5 text-[10px] font-mono font-bold",
         isAssistant
@@ -694,9 +589,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
         {isAssistant ? "AI" : "ME"}
       </div>
 
-      {/* Content block */}
       <div className={cn("flex-1 min-w-0", !isAssistant && "flex flex-col items-end")}>
-        {/* Label row -Hidden when processing */}
         {!isProcessing && (
           <div className={cn(
             "flex items-center gap-2 mb-1",
@@ -719,7 +612,6 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           </div>
         )}
 
-        {/* Processing indicator - shows above bubble when processing */}
         {isProcessing && (
           <div className="flex items-center gap-2 mb-1">
             <span className="w-1.5 h-1.5 bg-primary animate-pulse" />
@@ -729,49 +621,42 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           </div>
         )}
 
-        {/* Bubble */}
         <div className={cn(
-          "text-xs font-mono leading-relaxed px-3.5 py-3 border",
+          "text-xs font-mono leading-relaxed px-3.5 py-3 border relative",
           isAssistant
             ? "bg-card border-border text-foreground"
             : "bg-primary/8 border-primary/25 text-foreground"
         )}>
           {(() => {
-            // Check if content is a code pipeline phase JSON
+            try {
+              if (message.content.startsWith('{') && message.content.includes('"type":"code_complete"')) {
+                const data: CodeCompleteData = JSON.parse(message.content);
+                return <CodeCompleteCard data={data} />;
+              }
+            } catch {}
             try {
               if (message.content.startsWith('{') && message.content.includes('"type":"code_pipeline_phase"')) {
                 const data: CodePipelinePhaseData = JSON.parse(message.content);
-                // Skip typing if: loading from history (skipTyping already set),
-                // OR generation is complete (message has meta data),
-                // OR we're not currently generating anything
                 const shouldSkipTyping = data.skipTyping || !!message.meta || !isProcessing;
                 data.skipTyping = shouldSkipTyping;
-                return <CodePipelinePhaseUI data={data} />;
+                return <CodePipelinePhaseUI data={data} assistantId={message.id} isProcessing={isProcessing} />;
               }
             } catch {
-              // Not code pipeline JSON, continue to check other types
             }
-            // Check if content is a deep research phase JSON
             try {
               if (message.content.startsWith('{') && message.content.includes('"type":"deep_research_phase"')) {
                 const data: DeepResearchPhaseData = JSON.parse(message.content);
-                // Merge whatHappened from message into the data if available
                 if (message.whatHappened) {
                   data.researcher1 = message.whatHappened.researcher1 || data.researcher1;
                   data.researcher2 = message.whatHappened.researcher2 || data.researcher2;
                   data.content = message.whatHappened.decomposition || data.content;
                 }
-                // Skip typing if: loading from history (skipTyping already set),
-                // OR generation is complete (message has meta data),
-                // OR we're not currently generating anything
                 const shouldSkipTyping = data.skipTyping || !!message.meta || !isProcessing;
                 data.skipTyping = shouldSkipTyping;
                 return <DeepResearchPhaseUI data={data} />;
               }
             } catch {
-              // Not JSON, fall through to markdown
             }
-            // Default: render as markdown
             return (
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>
                 {message.content}
@@ -779,7 +664,6 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             );
           })()}
 
-          {/* PDF attachment boxes — shown below message text */}
           {!isAssistant && message.pdfs && message.pdfs.length > 0 && (
             <div className="mt-2.5 pt-2 border-t border-primary/20">
               <p className="text-[9px] font-mono tracking-widest text-primary/50 uppercase mb-1.5">
@@ -800,7 +684,6 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           )}
         </div>
 
-        {/* Expandable meta for assistant */}
         {isAssistant && message.meta && (
           <div className="mt-1.5 w-full">
             <button

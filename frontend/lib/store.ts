@@ -103,11 +103,6 @@ interface AppState {
   clearAllChats: () => void;
   isHistoryOpen: boolean;
   setIsHistoryOpen: (v: boolean) => void;
-  // Coding Panel state
-  codingPanelOpen: boolean;
-  setCodingPanelOpen: (v: boolean) => void;
-  selectedCodingAgentId: string | null;
-  setSelectedCodingAgentId: (id: string | null) => void;
   // Backend conversation tracking
   conversationId: string | null;
   setConversationId: (id: string | null) => void;
@@ -228,7 +223,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setGraphNodes: (nodes) => set({ graphNodes: nodes }),
   graphEdges: [],
   setGraphEdges: (edges) => set({ graphEdges: edges }),
-  clearGraphData: () => set({ graphNodes: [], graphEdges: [], codingPanelOpen: false, selectedCodingAgentId: null }),
+  clearGraphData: () => set({ graphNodes: [], graphEdges: [] }),
   upsertGraphNode: (node) => set((s) => {
     const idx = s.graphNodes.findIndex(n => n.id === node.id);
     if (idx >= 0) {
@@ -314,11 +309,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   isHistoryOpen: false,
   setIsHistoryOpen: (v) => set({ isHistoryOpen: v }),
-  // Coding Panel state
-  codingPanelOpen: false,
-  setCodingPanelOpen: (v) => set({ codingPanelOpen: v }),
-  selectedCodingAgentId: null,
-  setSelectedCodingAgentId: (id) => set({ selectedCodingAgentId: id }),
   // Backend conversation tracking
   conversationId: null,
   setConversationId: (id) => set((state) => {
