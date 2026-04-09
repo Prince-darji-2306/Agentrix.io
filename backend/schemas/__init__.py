@@ -1,1 +1,1 @@
-# Package marker for backend.schemas
+from schemas.schema import RegisterRequest, LoginRequest

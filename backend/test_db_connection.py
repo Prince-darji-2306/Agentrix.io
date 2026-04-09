@@ -1,70 +1,115 @@
-"""Test script to verify database connection is working."""
+"""
+test_db_connection.py — Test PostgreSQL and Qdrant connections.
+Usage: python test_db_connection.py
+"""
 
-import asyncio
-import logging
-import sys
 import os
+import asyncio
+import asyncpg
+from dotenv import load_dotenv
 
-# Add backend to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+load_dotenv()
 
 
-async def test_get_pool():
-    """Test that get_pool() works correctly."""
-    from db.postgres import get_pool
-    
-    logger.info("Testing get_pool()...")
-    
+async def test_postgres():
+    """Test PostgreSQL connection and list tables."""
+    print("=" * 50)
+    print("  Testing PostgreSQL Connection")
+    print("=" * 50)
+
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        print("[FAIL] DATABASE_URL not set in .env")
+        return False
+
+    print(f"[INFO] Connecting to: {database_url[:50]}...")
+
     try:
-        pool = await get_pool()
-        
-        if pool is None:
-            logger.warning("get_pool() returned None - database is unavailable")
-            logger.info("This is expected behavior when database connection fails")
-            return False
-        
-        logger.info("get_pool() returned a pool object successfully")
-        
-        # Try to acquire a connection
-        async with pool.acquire() as conn:
-            result = await conn.fetchval("SELECT 1")
-            logger.info("Database connection test successful: SELECT 1 = %s", result)
-            return True
-            
+        conn = await asyncpg.connect(database_url)
+        print("[OK] Connected to PostgreSQL successfully!")
+
+        # List tables
+        tables = await conn.fetch("""
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public' ORDER BY table_name
+        """)
+
+        if tables:
+            print(f"\n[INFO] Found {len(tables)} table(s):")
+            for row in tables:
+                print(f"  - {row['table_name']}")
+        else:
+            print("\n[WARN] No tables found. Run the server to initialize the database.")
+
+        # Test a simple query
+        result = await conn.fetchval("SELECT 1")
+        print(f"\n[OK] Test query returned: {result}")
+
+        await conn.close()
+        print("[OK] Connection closed.")
+        return True
+
     except Exception as e:
-        logger.error("get_pool() test failed: %s", e, exc_info=True)
+        print(f"[FAIL] PostgreSQL connection error: {e}")
         return False
 
 
+def test_qdrant():
+    """Test Qdrant connection and list collections."""
+    print("\n" + "=" * 50)
+    print("  Testing Qdrant Connection")
+    print("=" * 50)
+
+    qdrant_url = os.getenv("QDRANT_CLIENT")
+    qdrant_api_key = os.getenv("QDRANT_API_KEY")
+
+    if not qdrant_url:
+        print("[FAIL] QDRANT_CLIENT not set in .env")
+        return False
+
+    print(f"[INFO] Connecting to: {qdrant_url}")
+
+    try:
+        from qdrant_client import QdrantClient
+
+        client = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
+        collections = client.get_collections()
+
+        print("[OK] Connected to Qdrant successfully!")
+
+        if collections.collections:
+            print(f"\n[INFO] Found {len(collections.collections)} collection(s):")
+            for col in collections.collections:
+                info = client.get_collection(col.name)
+                print(f"  - {col.name} (vectors: {info.points_count})")
+        else:
+            print("\n[WARN] No collections found. Run the server to initialize collections.")
+
+        return True
+
+    except Exception as e:
+        print(f"[FAIL] Qdrant connection error: {e}")
+        return False
+
 
 async def main():
-    """Run all tests."""
-    logger.info("=" * 60)
-    logger.info("Database Connection Test Suite")
-    logger.info("=" * 60)
-    
-    # Test 1: get_pool()
-    logger.info("\n--- Test 1: get_pool() ---")
-    pool_ok = await test_get_pool()
-    
- 
-    
-    # Summary
-    logger.info("\n" + "=" * 60)
-    logger.info("Test Results:")
-    logger.info("  get_pool():  %s", "PASS" if pool_ok else "FAIL (database unavailable)")
-    if pool_ok:
-        logger.info("All tests passed! Database is working correctly.")
-        return 0
+    print("\n🔍 Agentrix.io — Database Connection Test\n")
+
+    pg_ok = await test_postgres()
+    qdrant_ok = test_qdrant()
+
+    print("\n" + "=" * 50)
+    print("  Results")
+    print("=" * 50)
+    print(f"  PostgreSQL: {'✅ OK' if pg_ok else '❌ FAILED'}")
+    print(f"  Qdrant:     {'✅ OK' if qdrant_ok else '❌ FAILED'}")
+    print("=" * 50)
+
+    if pg_ok and qdrant_ok:
+        print("\n✅ All connections are working!")
     else:
-        logger.warning("Some tests failed. Database may be unavailable.")
-        logger.info("This is expected if DATABASE_URL is invalid or PostgreSQL is not running.")
-        return 1
+        print("\n❌ Some connections failed. Check your .env file.")
 
 
 if __name__ == "__main__":
-    exit_code = asyncio.run(main())
-    sys.exit(exit_code)
+    asyncio.run(main())

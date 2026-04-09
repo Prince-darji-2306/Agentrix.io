@@ -3,6 +3,15 @@ from pydantic import BaseModel
 from langchain_core.messages import BaseMessage
 from typing import TypedDict, Annotated, Sequence, List, Optional, Callable
 
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    display_name: str | None = None
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
 
 class QueryRequest(BaseModel):
     query: str
@@ -26,6 +35,7 @@ class OrchestratorState(TypedDict):
     critic_confidence: int
     critic_logical_consistency: int
     critic_feedback: str
+    serious_mistakes: List[dict]
 
 class CodeModeState(TypedDict):
     original_task: str
@@ -36,6 +46,7 @@ class CodeModeState(TypedDict):
     confidence_score: int
     consistency_score: int
     step_logs: List[str]
+    serious_mistakes: List[dict]
     graph_nodes: List[dict]
     graph_edges: List[dict]
 
@@ -63,4 +74,6 @@ class CodingAgentState(TypedDict):
     logical_consistency: int
     critic_feedback: str
     final_output: str
+    parsed_files: List[dict]   # [{"filename": str, "content": str, "language": str}]
     step_logs: List[str]
+

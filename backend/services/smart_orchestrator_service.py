@@ -12,12 +12,11 @@ from agents import (
     code_reviewer_node,
     should_retry,
     format_output_node,
-    parse_sections,
     get_node_coords,
 )
 from services.agent_service import run_tool_agent, run_tool_agent_stream_sse
-from services.orchestrator_service import run_orchestrator
-from services.memory_service import get_conversation_memory_context, format_memory_block
+from services.orchestrator_service import run_orchestrator, run_orchestrator_stream_with_state
+from services.memory_service import get_conversation_memory_context_async, format_memory_block
 from schemas.schema import CodingAgentState
 
 logger = logging.getLogger(__name__)
@@ -44,7 +43,7 @@ async def smart_orchestrator_stream(
             logger.info(
                 f"[smart_orchestrator] Loading memory context for conv={conversation_id}, user={user_id}"
             )
-            memory_context = await get_conversation_memory_context(
+            memory_context = await get_conversation_memory_context_async(
                 conversation_id, user_id
             )
             if memory_context:
@@ -203,99 +202,133 @@ async def smart_orchestrator_stream(
                 {"type": "stage", "stage": "planning", "message": "Decomposing task..."}
             )
 
-            result = await run_orchestrator(task, memory_context=memory_context)
+            # Use streaming orchestrator for real-time phase updates
+            final_result = ""
+            final_meta = {}
+            orchestrator_raw = {}
 
-            yield yield_event(
-                {
-                    "type": "node_update",
-                    "node_id": "orchestrator",
-                    "status": "completed",
-                    "label": "Orchestrator",
-                    "node_type": "orchestrator",
-                    "x": coords["orchestrator"]["x"],
-                    "y": coords["orchestrator"]["y"],
-                    "output": f"Created {len(result.get('subtasks', []))} subtasks",
-                }
-            )
+            async for orch_event in run_orchestrator_stream_with_state(
+                task, memory_context=memory_context
+            ):
+                event_type = orch_event.get("type", "")
 
-            subtasks = result.get("subtasks", [])
-            researcher_idx = 0
-            for st in subtasks:
-                if st.get("agent_type") == "researcher":
-                    researcher_idx += 1
-                    node_id = f"researcher_{researcher_idx}"
-                    node_coords = coords.get(node_id, {"x": 400, "y": 280})
+                if event_type == "plan":
+                    # Subtasks created — emit node_update for orchestrator
+                    subtasks = orch_event.get("subtasks", [])
                     yield yield_event(
                         {
                             "type": "node_update",
-                            "node_id": node_id,
+                            "node_id": "orchestrator",
                             "status": "completed",
-                            "label": f"Researcher {researcher_idx}",
-                            "node_type": "agent",
-                            "x": node_coords["x"],
-                            "y": node_coords["y"],
-                            "output": (st.get("result", "") or "")[:200],
+                            "label": "Orchestrator",
+                            "node_type": "orchestrator",
+                            "x": coords["orchestrator"]["x"],
+                            "y": coords["orchestrator"]["y"],
+                            "output": f"Created {len(subtasks)} subtasks",
+                        }
+                    )
+                    # Forward the plan event
+                    yield yield_event(orch_event)
+
+                elif event_type == "content_chunk":
+                    section = orch_event.get("section", "")
+                    content = orch_event.get("content", "")
+
+                    if section == "decomposition":
+                        # Forward decomposition content
+                        yield yield_event(orch_event)
+
+                    elif section == "researcher_1":
+                        # Researcher 1 completed
+                        node_coords = coords.get("researcher_1", {"x": 240, "y": 280})
+                        yield yield_event(
+                            {
+                                "type": "node_update",
+                                "node_id": "researcher_1",
+                                "status": "completed",
+                                "label": "Researcher 1",
+                                "node_type": "agent",
+                                "x": node_coords["x"],
+                                "y": node_coords["y"],
+                                "output": (content or "")[:200],
+                            }
+                        )
+                        # Forward researcher content
+                        yield yield_event(orch_event)
+
+                    elif section == "researcher_2":
+                        # Researcher 2 completed
+                        node_coords = coords.get("researcher_2", {"x": 560, "y": 280})
+                        yield yield_event(
+                            {
+                                "type": "node_update",
+                                "node_id": "researcher_2",
+                                "status": "completed",
+                                "label": "Researcher 2",
+                                "node_type": "agent",
+                                "x": node_coords["x"],
+                                "y": node_coords["y"],
+                                "output": (content or "")[:200],
+                            }
+                        )
+                        # Forward researcher content
+                        yield yield_event(orch_event)
+
+                    elif section == "aggregation":
+                        # Aggregator completed
+                        yield yield_event(
+                            {
+                                "type": "node_update",
+                                "node_id": "aggregator",
+                                "status": "completed",
+                                "label": "Aggregator",
+                                "node_type": "agent",
+                                "x": coords["aggregator"]["x"],
+                                "y": coords["aggregator"]["y"],
+                                "output": "Synthesized final report",
+                            }
+                        )
+                        # Forward aggregation content
+                        yield yield_event(orch_event)
+
+                elif event_type == "final":
+                    # Critic completed — capture final result
+                    final_result = orch_event.get("result", "")
+                    final_meta = orch_event.get("meta", {})
+                    orchestrator_raw = final_meta.get("orchestrator_raw", {})
+
+                    # Emit critic and output node updates
+                    yield yield_event(
+                        {
+                            "type": "node_update",
+                            "node_id": "critic",
+                            "status": "completed",
+                            "label": "Critic",
+                            "node_type": "critic",
+                            "x": coords["critic"]["x"],
+                            "y": coords["critic"]["y"],
+                            "output": f"Confidence: {final_meta.get('confidence_score', 85)}% | Consistency: {final_meta.get('logical_consistency', 85)}%",
                         }
                     )
 
-            yield yield_event(
-                {
-                    "type": "node_update",
-                    "node_id": "aggregator",
-                    "status": "completed",
-                    "label": "Aggregator",
-                    "node_type": "agent",
-                    "x": coords["aggregator"]["x"],
-                    "y": coords["aggregator"]["y"],
-                    "output": "Synthesized final report",
-                }
-            )
+                    yield yield_event(
+                        {
+                            "type": "node_update",
+                            "node_id": "output",
+                            "status": "completed",
+                            "label": "Final Report",
+                            "node_type": "output",
+                            "x": coords["output"]["x"],
+                            "y": coords["output"]["y"],
+                            "output": "7-section structured output",
+                        }
+                    )
 
-            yield yield_event(
-                {
-                    "type": "node_update",
-                    "node_id": "critic",
-                    "status": "completed",
-                    "label": "Critic",
-                    "node_type": "critic",
-                    "x": coords["critic"]["x"],
-                    "y": coords["critic"]["y"],
-                    "output": f"Confidence: {result.get('critic_confidence', 85)}% | Consistency: {result.get('critic_logical_consistency', 85)}%",
-                }
-            )
+                    # Forward the final event
+                    yield yield_event(orch_event)
 
-            yield yield_event(
-                {
-                    "type": "node_update",
-                    "node_id": "output",
-                    "status": "completed",
-                    "label": "Final Report",
-                    "node_type": "output",
-                    "x": coords["output"]["x"],
-                    "y": coords["output"]["y"],
-                    "output": "7-section structured output",
-                }
-            )
-
-            yield yield_event(
-                {
-                    "type": "final",
-                    "result": result.get("final_result", ""),
-                    "meta": {
-                        "confidence_score": result.get("critic_confidence", 85),
-                        "logical_consistency": result.get(
-                            "critic_logical_consistency", 85
-                        ),
-                        "critic_feedback": result.get("critic_feedback", ""),
-                        "serious_mistakes": result.get("serious_mistakes", []),
-                        "retry_count": 0,
-                        "tools_used": [
-                            st.get("agent_type", "") + "Agent" for st in subtasks
-                        ],
-                        "orchestrator_raw": result,
-                    },
-                }
-            )
+                elif event_type == "error":
+                    yield yield_event(orch_event)
 
         # ─── Code Path ───────────────────────────────────────────────────
         elif path == "code":
@@ -368,6 +401,7 @@ async def run_coding_agent_sse(
         "logical_consistency": 0,
         "critic_feedback": "",
         "final_output": "",
+        "parsed_files": [],
         "step_logs": [],
     }
 
@@ -453,6 +487,15 @@ async def run_coding_agent_sse(
                 "output": output_preview,
             }
         )
+        
+        yield yield_event(
+            {
+                "type": "agent_output",
+                "agent_id": coder_id,
+                "agent_name": f"Coding Agent {i + 1}",
+                "content": state["coder_results"][i],
+            }
+        )
 
     # 3. Aggregator-Reviewer Loop
     while True:
@@ -513,7 +556,7 @@ async def run_coding_agent_sse(
         if should_retry(state) == "format_output":
             break
 
-    # 4. Format Output
+    # 4. Format Output — parse merged code into structured files
     yield yield_event(
         {
             "type": "node_update",
@@ -528,6 +571,11 @@ async def run_coding_agent_sse(
     )
     format_result = await format_output_node(state)
     state.update(format_result)
+
+    parsed_files = state.get("parsed_files", [])
+    total = len(parsed_files)
+    filenames = [f["filename"] for f in parsed_files]
+
     yield yield_event(
         {
             "type": "node_update",
@@ -537,19 +585,32 @@ async def run_coding_agent_sse(
             "node_type": "output",
             "x": node_coords["output"]["x"],
             "y": node_coords["output"]["y"],
-            "output": "Code generation complete",
+            "output": f"{total} file(s) generated",
         }
     )
 
-    for section, content in parse_sections(state["final_output"]):
+    # Stream each file as a single chunk (typewriter effect done on frontend)
+    for idx, file_obj in enumerate(parsed_files):
         yield yield_event(
-            {"type": "code_section", "section": section, "content": content}
+            {
+                "type": "file_output",
+                "filename": file_obj["filename"],
+                "content": file_obj["content"],
+                "language": file_obj["language"],
+                "index": idx,
+                "total": total,
+            }
         )
 
+    # Final event carries a compact code_complete marker — not the full code blob
     yield yield_event(
         {
             "type": "final",
-            "result": state["final_output"],
+            "result": json.dumps({
+                "type": "code_complete",
+                "file_count": total,
+                "filenames": filenames,
+            }),
             "meta": {
                 "confidence_score": state["confidence_score"],
                 "logical_consistency": state["logical_consistency"],
