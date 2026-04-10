@@ -7,7 +7,6 @@ from routers.chat_router import router as chat_router
 from routers.history_router import router as history_router
 from routers.pdf_router import router as pdf_router
 from routers.debate_router import router as debate_router
-from routers.orchestrator_router import router as orchestrator_router
 from routers.admin_router import router as admin_router
 from routers.reflection_router import router as reflection_router
 
@@ -31,7 +30,6 @@ app.include_router(chat_router)
 app.include_router(history_router)
 app.include_router(pdf_router)
 app.include_router(debate_router)
-app.include_router(orchestrator_router)
 app.include_router(admin_router)
 app.include_router(reflection_router)
 

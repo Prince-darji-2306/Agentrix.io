@@ -4,6 +4,17 @@ from agents import get_orchestrator_graph
 from schemas.schema import OrchestratorState
 from services.memory_service import format_memory_block
 
+def _to_non_empty_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, ensure_ascii=False).strip()
+        except Exception:
+            return str(value).strip()
+    return str(value).strip()
 
 async def run_orchestrator(task: str, memory_context: str | None = None) -> dict:
     """Run the orchestrator pipeline: planner → parallel researchers → aggregator → critic.
