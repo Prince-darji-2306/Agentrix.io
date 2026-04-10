@@ -82,6 +82,7 @@ CREATE TABLE IF NOT EXISTS messages (
     message JSONB NOT NULL DEFAULT '[]',
     confidence NUMERIC(4,3) CHECK (confidence BETWEEN 0 AND 1),
     consistency NUMERIC(4,3) CHECK (consistency BETWEEN 0 AND 1),
+    pre_thinking JSONB DEFAULT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -132,7 +133,62 @@ async def init_db():
     pool = await get_pool()
     async with pool.acquire() as conn:
         await conn.execute(CREATE_TABLES_SQL)
+        await _migrate_messages_pre_thinking(conn)
     print("[postgres] Database initialized successfully.")
+
+
+async def _column_exists(conn: asyncpg.Connection, table: str, column: str) -> bool:
+    return bool(
+        await conn.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND table_name = $1
+                  AND column_name = $2
+            )
+            """,
+            table,
+            column,
+        )
+    )
+
+
+async def _migrate_messages_pre_thinking(conn: asyncpg.Connection) -> None:
+    table_exists = bool(
+        await conn.fetchval(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = current_schema()
+                  AND table_name = 'messages'
+            )
+            """
+        )
+    )
+    if not table_exists:
+        return
+
+    has_pre_thinking = await _column_exists(conn, "messages", "pre_thinking")
+    has_what_happened = await _column_exists(conn, "messages", "what_happened")
+
+    if has_what_happened and not has_pre_thinking:
+        await conn.execute(
+            "ALTER TABLE messages RENAME COLUMN what_happened TO pre_thinking"
+        )
+    elif has_what_happened and has_pre_thinking:
+        await conn.execute(
+            """
+            UPDATE messages
+            SET pre_thinking = COALESCE(pre_thinking, what_happened)
+            WHERE what_happened IS NOT NULL
+            """
+        )
+        await conn.execute("ALTER TABLE messages DROP COLUMN what_happened")
+    elif not has_pre_thinking:
+        await conn.execute("ALTER TABLE messages ADD COLUMN pre_thinking JSONB DEFAULT NULL")
 
 
 # ─── Helper Functions ─────────────────────────────────────────────────────────
@@ -202,7 +258,7 @@ async def append_message(
     confidence: float | None = None,
     consistency: float | None = None,
     pdfs: list[str] | None = None,
-    what_happened: dict | None = None,
+    pre_thinking: dict | None = None,
     tools: list[str] | None = None,
 ) -> str:
     """
@@ -218,13 +274,13 @@ async def append_message(
         if tools:
             new_entry["tools"] = tools
         row = await conn.fetchrow(
-            "INSERT INTO messages (conversation_id, reasoning_mode, message, confidence, consistency, what_happened) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            "INSERT INTO messages (conversation_id, reasoning_mode, message, confidence, consistency, pre_thinking) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
             uuid.UUID(conversation_id),
             reasoning_mode,
             _json.dumps([new_entry]),
             confidence,
             consistency,
-            _json.dumps(what_happened) if what_happened else None,
+            _json.dumps(pre_thinking) if pre_thinking else None,
         )
         return str(row["id"])
 
@@ -251,7 +307,7 @@ async def create_debate_session(
 
 
 async def get_user_history(user_id: str) -> list[dict]:
-    """Get all conversations with their messages for a user, ordered by most recent."""
+    """Get conversation metadata for a user, ordered by most recent."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -261,66 +317,29 @@ async def get_user_history(user_id: str) -> list[dict]:
                 c.type AS conv_type,
                 c.title,
                 c.created_at AS conv_created,
-                c.updated_at AS conv_updated,
-                m.id AS msg_id,
-                m.reasoning_mode,
-                m.message,
-                m.confidence,
-                m.consistency,
-                m.what_happened,
-                m.created_at AS msg_created
+                c.updated_at AS conv_updated
             FROM conversations c
-            LEFT JOIN messages m ON c.id = m.conversation_id
             WHERE c.user_id = $1
-            ORDER BY c.updated_at DESC, m.created_at ASC
+            ORDER BY c.updated_at DESC
             """,
             uuid.UUID(user_id),
         )
 
-        conversations: dict[str, dict] = {}
-        for row in rows:
-            conv_id = str(row["conv_id"])
-            if conv_id not in conversations:
-                conversations[conv_id] = {
-                    "id": conv_id,
-                    "type": row["conv_type"],
-                    "title": row["title"],
-                    "created_at": row["conv_created"].isoformat()
-                    if row["conv_created"]
-                    else None,
-                    "updated_at": row["conv_updated"].isoformat()
-                    if row["conv_updated"]
-                    else None,
-                    "messages": [],
-                }
-            if row["msg_id"]:
-                msgs = (
-                    row["message"]
-                    if isinstance(row["message"], list)
-                    else _json.loads(row["message"])
-                )
-                what_happened = row.get("what_happened")
-                if what_happened and not isinstance(what_happened, dict):
-                    what_happened = _json.loads(what_happened) if what_happened else None
-                conversations[conv_id]["messages"].append(
-                    {
-                        "id": str(row["msg_id"]),
-                        "reasoning_mode": row["reasoning_mode"],
-                        "content": msgs,
-                        "confidence": float(row["confidence"])
-                        if row["confidence"]
-                        else None,
-                        "consistency": float(row["consistency"])
-                        if row["consistency"]
-                        else None,
-                        "what_happened": what_happened,
-                        "created_at": row["msg_created"].isoformat()
-                        if row["msg_created"]
-                        else None,
-                    }
-                )
-
-        return list(conversations.values())
+        return [
+            {
+                "id": str(row["conv_id"]),
+                "type": row["conv_type"],
+                "title": row["title"],
+                "created_at": row["conv_created"].isoformat()
+                if row["conv_created"]
+                else None,
+                "updated_at": row["conv_updated"].isoformat()
+                if row["conv_updated"]
+                else None,
+                "messages": [],
+            }
+            for row in rows
+        ]
 
 
 async def update_conversation_timestamp(conversation_id: str):
@@ -418,7 +437,7 @@ async def get_conversation_with_messages(conversation_id: str, user_id: str) -> 
             raise ValueError("Conversation not found")
 
         msgs = await conn.fetch(
-            "SELECT id, reasoning_mode, message, confidence, consistency, what_happened, created_at FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC",
+            "SELECT id, reasoning_mode, message, confidence, consistency, pre_thinking, created_at FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC",
             uuid.UUID(conversation_id),
         )
 
@@ -427,9 +446,9 @@ async def get_conversation_with_messages(conversation_id: str, user_id: str) -> 
             content = m["message"]
             if isinstance(content, str):
                 content = _json.loads(content)
-            what_happened = m.get("what_happened")
-            if what_happened and not isinstance(what_happened, dict):
-                what_happened = _json.loads(what_happened) if what_happened else None
+            pre_thinking = m.get("pre_thinking")
+            if pre_thinking and not isinstance(pre_thinking, dict):
+                pre_thinking = _json.loads(pre_thinking) if pre_thinking else None
             messages.append(
                 {
                     "id": str(m["id"]),
@@ -439,7 +458,7 @@ async def get_conversation_with_messages(conversation_id: str, user_id: str) -> 
                     "consistency": float(m["consistency"])
                     if m["consistency"]
                     else None,
-                    "what_happened": what_happened,
+                    "pre_thinking": pre_thinking,
                     "created_at": m["created_at"].isoformat()
                     if m["created_at"]
                     else None,
