@@ -1,10 +1,14 @@
 import json
 import asyncio
 import re
-from typing import Callable
+from typing import Any, Callable
 from core.llm_engine import get_llm
 from schemas.schema import CodingAgentState, CodingSubtask
 from langchain_core.messages import HumanMessage, SystemMessage
+
+_SCORE_MIN = 0
+_SCORE_MAX = 100
+_VALID_SEVERITIES = {"low", "medium", "high", "critical"}
 
 
 # ─── Node Coordinates (for frontend graph) ────────────────────────────────────
@@ -24,6 +28,144 @@ NODE_COORDS = {
 def get_node_coords() -> dict:
     """Return the node coordinate map for frontend graph rendering."""
     return NODE_COORDS
+
+
+def _sanitize_fenced_json(raw_text: str) -> str:
+    text = raw_text.strip()
+    if not text:
+        return text
+
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines:
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+
+    if text.lower().startswith("json\n"):
+        text = text[5:].strip()
+
+    return text
+
+
+def _extract_first_json_object(text: str) -> str:
+    start = -1
+    depth = 0
+    in_string = False
+    escape_next = False
+
+    for idx, char in enumerate(text):
+        if in_string:
+            if escape_next:
+                escape_next = False
+            elif char == "\\":
+                escape_next = True
+            elif char == '"':
+                in_string = False
+            continue
+
+        if char == '"':
+            in_string = True
+            continue
+
+        if char == "{":
+            if depth == 0:
+                start = idx
+            depth += 1
+            continue
+
+        if char == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start != -1:
+                return text[start : idx + 1]
+
+    return ""
+
+
+def _load_json_object(raw_text: str) -> dict[str, Any]:
+    sanitized = _sanitize_fenced_json(raw_text)
+    candidates = [sanitized]
+
+    extracted = _extract_first_json_object(sanitized)
+    if extracted and extracted not in candidates:
+        candidates.append(extracted)
+
+    last_error: Exception | None = None
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            continue
+        if not isinstance(parsed, dict):
+            raise ValueError("Reviewer response JSON root must be an object.")
+        return parsed
+
+    raise ValueError(f"Unable to parse reviewer JSON response: {last_error}")
+
+
+def _normalize_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return value.strip() if isinstance(value, str) else str(value).strip()
+
+
+def _clamp_score(value: Any, default: int) -> int:
+    try:
+        numeric = int(round(float(value)))
+    except (TypeError, ValueError):
+        numeric = default
+    return max(_SCORE_MIN, min(_SCORE_MAX, numeric))
+
+
+def _normalize_errors(value: Any) -> list[str]:
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return []
+
+    normalized: list[str] = []
+    for item in value:
+        item_text = _normalize_text(item)
+        if item_text:
+            normalized.append(item_text)
+    return normalized
+
+
+def _normalize_serious_mistakes(value: Any) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+
+    normalized: list[dict] = []
+    for item in value:
+        if isinstance(item, str):
+            description = item.strip()
+            if description:
+                normalized.append({"severity": "high", "description": description})
+            continue
+        if not isinstance(item, dict):
+            continue
+
+        description = _normalize_text(item.get("description"))
+        if not description:
+            continue
+
+        severity = _normalize_text(item.get("severity")).lower() or "high"
+        if severity not in _VALID_SEVERITIES:
+            severity = "high"
+
+        normalized_item = {"severity": severity, "description": description}
+
+        action = _normalize_text(item.get("action"))
+        if action:
+            normalized_item["action"] = action
+
+        normalized.append(normalized_item)
+
+    return normalized
 
 
 # ─── Code Planner Node ───────────────────────────────────────────────────────
@@ -223,60 +365,92 @@ async def code_aggregator_node(state: CodingAgentState) -> dict:
 
 async def code_reviewer_node(state: CodingAgentState) -> dict:
     """Reviews merged code for correctness and returns scores + errors."""
-    llm = get_llm(temperature=0.1, change=True)
+    llm = get_llm(temperature=0.0, change=True)
     merged_code = state["merged_code"]
     original_task = state["original_task"]
     retry_count = state.get("retry_count", 0)
 
-    prompt = f"""You are a strict code reviewer. Evaluate the following merged code for correctness, completeness, and quality.
+    prompt = f"""You are a strict code reviewer and quality gate.
+
+            Evaluate the merged code against the original task and report only concrete, high-value findings.
+
+            SCORING RUBRIC (integer 0-100):
+            - confidence: Correctness and production readiness of the implementation.
+              0-39 = fundamentally broken/incomplete; 40-69 = partially correct with major gaps;
+              70-89 = mostly correct with manageable issues; 90-100 = robust, correct, and production-ready.
+            - consistency: Internal coherence and contract alignment across files/interfaces.
+              0-39 = contradictory/incompatible; 40-69 = mixed integration quality;
+              70-89 = coherent with minor integration issues; 90-100 = cleanly integrated and consistent.
+
+            ISSUE CRITERIA:
+            - "errors": blocker defects that must be fixed before acceptance.
+            - "serious_mistakes": security vulnerabilities, requirement misses, data-loss risks,
+              broken interfaces, or logic errors with high user impact.
+            Every issue must be specific and actionable.
 
             Original Task: {original_task}
 
             Code to Review:
             {merged_code}
 
-            Provide your assessment in EXACTLY this JSON format (no other text, no markdown backticks):
+            Output contract (STRICT JSON ONLY; no markdown/backticks/preamble):
             {{
-            "confidence": 75-95,
-            "consistency": 75-95,
-            "friendly_feedback": "Brief note on quality and suggestions",
-            "errors": ["Critical error 1 to be fixed", "Critical error 2 to be fixed"],
+            "confidence": 0,
+            "consistency": 0,
+            "friendly_feedback": "2-4 sentence summary with concrete next steps.",
+            "errors": ["Actionable blocker 1", "Actionable blocker 2"],
             "serious_mistakes": [
                 {{
-                "severity": "high",
-                "description": "Critical security flaw or missing major requirement"
+                "severity": "high|critical",
+                "description": "What is wrong and where it appears.",
+                "action": "Specific fix to apply."
                 }}
             ]
             }}
-            If no errors or serious mistakes, make errors and serious_mistakes, arrays empty [].
-            Do not include any other text except valid JSON."""
+            If there are no blockers, return "errors": [].
+            If there are no serious mistakes, return "serious_mistakes": []."""
 
     response = await llm.ainvoke([
         SystemMessage(content="You are a data-formatting agent. Output raw JSON only."),
         HumanMessage(content=prompt)
     ])
-    content = response.content.strip()
-    if content.startswith("```json"):
-        content = content.replace("```json", "", 1)
-    if content.endswith("```"):
-        content = content[:-3]
-    content = content.strip()
-
-    confidence = 85
-    consistency = 85
-    errors = []
-    feedback = ""
-    serious_mistakes = []
-
+    parse_error = ""
+    parsed: dict[str, Any] = {}
     try:
-        parsed = json.loads(content)
-        confidence = parsed.get("confidence", 85)
-        consistency = parsed.get("consistency", 85)
-        errors = parsed.get("errors", [])
-        feedback = parsed.get("friendly_feedback", "")
-        serious_mistakes = parsed.get("serious_mistakes", [])
-    except Exception:
-        pass
+        parsed = _load_json_object(response.content if isinstance(response.content, str) else str(response.content))
+    except ValueError as exc:
+        parse_error = str(exc)
+
+    confidence_default = 25 if parse_error else 70
+    consistency_default = 25 if parse_error else 70
+    confidence = _clamp_score(parsed.get("confidence"), default=confidence_default)
+    consistency = _clamp_score(
+        parsed.get("consistency", parsed.get("logical_consistency", parsed.get("consistency_score"))),
+        default=consistency_default,
+    )
+    errors = _normalize_errors(parsed.get("errors", parsed.get("review_errors", [])))
+    if parse_error and not errors:
+        errors = [
+            "Reviewer output was not valid JSON. Re-run merge/review and verify every requirement explicitly."
+        ]
+
+    feedback = _normalize_text(parsed.get("friendly_feedback", parsed.get("critic_feedback")))
+    if not feedback:
+        feedback = (
+            "Reviewer output failed strict JSON validation; a conservative failure response was applied."
+            if parse_error
+            else "Review complete. Address blockers and rerun the reviewer."
+        )
+
+    serious_mistakes = _normalize_serious_mistakes(parsed.get("serious_mistakes", []))
+    if parse_error and not serious_mistakes:
+        serious_mistakes = [
+            {
+                "severity": "high",
+                "description": "Reviewer response was not valid JSON, reducing trust in the quality gate.",
+                "action": "Regenerate reviewer output with strict JSON-only compliance.",
+            }
+        ]
 
     return {
         "confidence_score": confidence,
