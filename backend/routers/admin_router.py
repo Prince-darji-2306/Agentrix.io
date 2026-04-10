@@ -63,7 +63,7 @@ async def view_messages(
     async with pool.acquire() as conn:
         if conversation_id:
             rows = await conn.fetch(
-                """SELECT m.id, m.conversation_id, m.reasoning_mode, m.message, m.confidence, m.consistency, m.created_at
+                """SELECT m.id, m.conversation_id, m.reasoning_mode, m.message, m.confidence, m.consistency, m.pre_thinking, m.created_at
                    FROM messages m WHERE m.conversation_id = $1
                    ORDER BY m.created_at ASC LIMIT $2 OFFSET $3""",
                 conversation_id, limit, offset,
@@ -71,7 +71,7 @@ async def view_messages(
             total = await conn.fetchval("SELECT COUNT(*) FROM messages WHERE conversation_id = $1", conversation_id)
         else:
             rows = await conn.fetch(
-                """SELECT m.id, m.conversation_id, m.reasoning_mode, m.message, m.confidence, m.consistency, m.created_at
+                """SELECT m.id, m.conversation_id, m.reasoning_mode, m.message, m.confidence, m.consistency, m.pre_thinking, m.created_at
                    FROM messages m ORDER BY m.created_at DESC LIMIT $1 OFFSET $2""",
                 limit, offset,
             )

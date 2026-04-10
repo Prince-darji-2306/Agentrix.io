@@ -18,6 +18,19 @@ class TaskRequest(BaseModel):
     conversation_id: str | None = None
 
 
+def _to_non_empty_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, ensure_ascii=False).strip()
+        except Exception:
+            return str(value).strip()
+    return str(value).strip()
+
+
 @router.post("/orchestrator/task")
 async def orchestrator_task(req: TaskRequest, user_id: str = Depends(get_current_user)):
     """Run the multi-agent orchestrator (deep research) with SSE streaming."""
@@ -26,7 +39,8 @@ async def orchestrator_task(req: TaskRequest, user_id: str = Depends(get_current
         final_result = ""
         final_meta = {}
         conv_id = req.conversation_id
-        what_happened = {"decomposition": "", "researcher1": "", "researcher2": ""}
+        pre_thinking = {"decomposition": "", "researcher1": "", "researcher2": ""}
+        aggregation_content = ""
 
         try:
             # Load memory context
@@ -49,11 +63,13 @@ async def orchestrator_task(req: TaskRequest, user_id: str = Depends(get_current
                     section = event.get("section", "")
                     content = event.get("content", "")
                     if section == "decomposition":
-                        what_happened["decomposition"] = content
+                        pre_thinking["decomposition"] = content
                     elif section == "researcher_1":
-                        what_happened["researcher1"] = content
+                        pre_thinking["researcher1"] = content
                     elif section == "researcher_2":
-                        what_happened["researcher2"] = content
+                        pre_thinking["researcher2"] = content
+                    elif section == "aggregation":
+                        aggregation_content = content
 
         except Exception as e:
             logger.error(f"[orchestrator_router] Streaming error: {e}", exc_info=True)
@@ -69,17 +85,30 @@ async def orchestrator_task(req: TaskRequest, user_id: str = Depends(get_current
             orchestrator_raw = final_meta.get("orchestrator_raw", {})
             tools = final_meta.get("tools_used", [])
 
-            # Only save what_happened if we have decomposition content
-            wh_data = what_happened if what_happened.get("decomposition") else None
+            assistant_content_to_store = (
+                _to_non_empty_text(final_result)
+                or (
+                    _to_non_empty_text(orchestrator_raw.get("final_result", ""))
+                    if isinstance(orchestrator_raw, dict)
+                    else ""
+                )
+                or _to_non_empty_text(aggregation_content)
+                or "Deep research completed."
+            )
+
+            # Only save pre_thinking if we have decomposition content
+            pre_thinking_data = (
+                pre_thinking if pre_thinking.get("decomposition") else None
+            )
 
             await append_message(
                 conversation_id=conv_id,
                 reasoning_mode="deep_research",
                 user_content=req.task,
-                assistant_content=final_result,
+                assistant_content=assistant_content_to_store,
                 confidence=raw_conf / 100 if raw_conf is not None else None,
                 consistency=raw_cons / 100 if raw_cons is not None else None,
-                what_happened=wh_data,
+                pre_thinking=pre_thinking_data,
                 tools=tools,
             )
             await update_conversation_timestamp(conv_id)
@@ -89,7 +118,7 @@ async def orchestrator_task(req: TaskRequest, user_id: str = Depends(get_current
 
             # Update window memory
             if conv_id:
-                add_to_memory(conv_id, req.task, final_result)
+                add_to_memory(conv_id, req.task, assistant_content_to_store)
 
         except Exception as db_err:
             logger.error(f"[orchestrator_router] DB persist error: {db_err}", exc_info=True)

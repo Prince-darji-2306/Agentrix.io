@@ -248,10 +248,89 @@ async def smart_orchestrator_endpoint(
     final_result = ""
     meta_info = {}
     detected_path = "standard"
-    what_happened = {"decomposition": "", "researcher1": "", "researcher2": ""}
+    pre_thinking = {"decomposition": "", "researcher1": "", "researcher2": ""}
+    deep_research_aggregation = ""
+    code_pre_thinking = {
+        "problem_understanding": "",
+        "approach": "",
+        "agent_outputs": [],
+        "file_outputs": [],
+    }
+    code_final_marker = None
+
+    def _to_non_empty_text(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, (dict, list)):
+            try:
+                return json.dumps(value, ensure_ascii=False).strip()
+            except Exception:
+                return str(value).strip()
+        return str(value).strip()
+
+    def _extract_code_complete_marker(value):
+        parsed_result = None
+        if isinstance(value, str) and value.strip():
+            try:
+                parsed_result = json.loads(value)
+            except json.JSONDecodeError:
+                parsed_result = None
+        elif isinstance(value, dict):
+            parsed_result = value
+
+        if isinstance(parsed_result, dict) and parsed_result.get("type") == "code_complete":
+            return parsed_result
+        return None
+
+    def _build_code_approach_from_subtasks(subtasks) -> str:
+        if not isinstance(subtasks, list):
+            return ""
+        lines = []
+        for subtask in subtasks:
+            if not isinstance(subtask, dict):
+                continue
+            desc = str(subtask.get("description", "")).strip()
+            if not desc:
+                continue
+            subtask_id = subtask.get("id")
+            if subtask_id is not None:
+                lines.append(f"- Agent {subtask_id}: {desc}")
+            else:
+                lines.append(f"- {desc}")
+        if not lines:
+            return ""
+        return "Parallel implementation plan:\n" + "\n".join(lines)
+
+    def _build_code_assistant_content(
+        problem_understanding: str,
+        approach: str,
+        final_marker: dict | None,
+    ) -> str:
+        sections = []
+        if problem_understanding:
+            sections.append(f"Problem Understanding:\n{problem_understanding}")
+        if approach:
+            sections.append(f"Approach:\n{approach}")
+        summary = "\n\n".join(sections).strip()
+        if summary:
+            return summary
+
+        if isinstance(final_marker, dict):
+            file_count = final_marker.get("file_count")
+            filenames = final_marker.get("filenames", [])
+            if isinstance(file_count, int):
+                if isinstance(filenames, list) and filenames:
+                    return (
+                        f"Code generation completed with {file_count} file(s): "
+                        + ", ".join(str(name) for name in filenames)
+                    )
+                return f"Code generation completed with {file_count} file(s)."
+        return ""
 
     async def event_generator():
-        nonlocal final_result, meta_info, detected_path, what_happened
+        nonlocal final_result, meta_info, detected_path, pre_thinking, deep_research_aggregation, code_pre_thinking, code_final_marker
         try:
             async for chunk in smart_orchestrator_stream(
                 req.task,
@@ -261,20 +340,59 @@ async def smart_orchestrator_endpoint(
                 try:
                     if chunk.startswith("data: "):
                         evt = json.loads(chunk[6:].strip())
-                        if evt.get("type") == "final":
+                        evt_type = evt.get("type")
+                        if evt_type == "final":
                             final_result = evt.get("result", "")
                             meta_info = evt.get("meta", {})
-                        elif evt.get("type") == "route":
+                            if detected_path == "code":
+                                parsed_result = _extract_code_complete_marker(final_result)
+                                if isinstance(parsed_result, dict):
+                                    code_final_marker = parsed_result
+                        elif evt_type == "route":
                             detected_path = evt.get("path", "standard")
-                        elif evt.get("type") == "content_chunk":
+                        elif evt_type == "content_chunk":
                             section = evt.get("section", "")
                             content = evt.get("content", "")
                             if section == "decomposition":
-                                what_happened["decomposition"] = content
+                                pre_thinking["decomposition"] = content
                             elif section == "researcher_1":
-                                what_happened["researcher1"] = content
+                                pre_thinking["researcher1"] = content
                             elif section == "researcher_2":
-                                what_happened["researcher2"] = content
+                                pre_thinking["researcher2"] = content
+                            elif section == "aggregation":
+                                deep_research_aggregation = content
+                        elif evt_type == "code_section":
+                            section = evt.get("section", "")
+                            content = evt.get("content", "")
+                            if section == "problem_understanding":
+                                code_pre_thinking["problem_understanding"] = content
+                            elif section == "approach":
+                                code_pre_thinking["approach"] = content
+                        elif evt_type == "plan" and detected_path == "code":
+                            if not code_pre_thinking.get("approach"):
+                                generated_approach = _build_code_approach_from_subtasks(
+                                    evt.get("subtasks", [])
+                                )
+                                if generated_approach:
+                                    code_pre_thinking["approach"] = generated_approach
+                        elif evt_type == "agent_output" and detected_path == "code":
+                            code_pre_thinking["agent_outputs"].append(
+                                {
+                                    "agent_id": evt.get("agent_id"),
+                                    "agent_name": evt.get("agent_name"),
+                                    "content": evt.get("content", ""),
+                                }
+                            )
+                        elif evt_type == "file_output" and detected_path == "code":
+                            code_pre_thinking["file_outputs"].append(
+                                {
+                                    "filename": evt.get("filename", ""),
+                                    "language": evt.get("language", "text"),
+                                    "index": evt.get("index"),
+                                    "total": evt.get("total"),
+                                    "content": evt.get("content", ""),
+                                }
+                            )
                 except (json.JSONDecodeError, IndexError):
                     pass
                 yield chunk
@@ -297,15 +415,57 @@ async def smart_orchestrator_endpoint(
                 raw_conf = meta_info.get("confidence_score")
                 raw_cons = meta_info.get("logical_consistency")
                 serious_mistakes = meta_info.get("serious_mistakes", [])
+                orchestrator_raw = meta_info.get("orchestrator_raw", {})
+                orchestrator_raw_result = (
+                    _to_non_empty_text(orchestrator_raw.get("final_result", ""))
+                    if isinstance(orchestrator_raw, dict)
+                    else ""
+                )
+                path_specific_final_result = _to_non_empty_text(final_result)
+                deep_research_chunk_content = _to_non_empty_text(deep_research_aggregation)
+                code_summary_content = ""
+                pre_thinking_data = None
 
-                # Use orchestrator_raw final_result as fallback if final_result is empty
-                if not final_result:
-                    orchestrator_raw = meta_info.get("orchestrator_raw", {})
-                    if orchestrator_raw:
-                        final_result = orchestrator_raw.get("final_result", "")
+                if detected_path == "deep_research":
+                    pre_thinking_data = (
+                        pre_thinking if pre_thinking.get("decomposition") else None
+                    )
+                elif detected_path == "code":
+                    parsed_result = _extract_code_complete_marker(final_result)
+                    if code_final_marker is None and isinstance(parsed_result, dict):
+                        code_final_marker = parsed_result
+                    if isinstance(parsed_result, dict):
+                        path_specific_final_result = ""
 
-                # Only save what_happened if we have decomposition content
-                wh_data = what_happened if what_happened.get("decomposition") else None
+                    problem_understanding = str(
+                        code_pre_thinking.get("problem_understanding", "")
+                    ).strip()
+                    approach = str(code_pre_thinking.get("approach", "")).strip()
+                    agent_outputs = code_pre_thinking.get("agent_outputs", [])
+                    file_outputs = code_pre_thinking.get("file_outputs", [])
+
+                    code_summary_content = _build_code_assistant_content(
+                        problem_understanding,
+                        approach,
+                        code_final_marker
+                        if isinstance(code_final_marker, dict)
+                        else None,
+                    )
+
+                    pre_thinking_data = {
+                        "route_path": detected_path,
+                        "agent_outputs": agent_outputs,
+                        "file_outputs": file_outputs,
+                    }
+                    if isinstance(code_final_marker, dict):
+                        pre_thinking_data["final_marker"] = code_final_marker
+
+                    if not (
+                        pre_thinking_data["agent_outputs"]
+                        or pre_thinking_data["file_outputs"]
+                        or pre_thinking_data.get("final_marker")
+                    ):
+                        pre_thinking_data = None
 
                 # Build tools list based on detected path
                 tools = None
@@ -319,15 +479,31 @@ async def smart_orchestrator_endpoint(
                     if tools:
                         tools = [t if isinstance(t, str) else t.get("tool", str(t)) for t in tools]
 
+                explicit_fallback_text = (
+                    "Deep research completed."
+                    if detected_path == "deep_research"
+                    else "Code generation completed."
+                    if detected_path == "code"
+                    else "Request completed."
+                )
+
+                assistant_content_to_store = (
+                    path_specific_final_result
+                    or orchestrator_raw_result
+                    or deep_research_chunk_content
+                    or code_summary_content
+                    or explicit_fallback_text
+                )
+
                 message_id = await append_message(
                     conversation_id=conv_id,
                     reasoning_mode=reasoning,
                     user_content=req.task,
-                    assistant_content=final_result,
+                    assistant_content=assistant_content_to_store,
                     confidence=raw_conf / 100 if raw_conf is not None else None,
                     consistency=raw_cons / 100 if raw_cons is not None else None,
                     pdfs=req.pdfs,
-                    what_happened=wh_data,
+                    pre_thinking=pre_thinking_data,
                     tools=tools,
                 )
                 await update_conversation_timestamp(conv_id)
@@ -345,7 +521,7 @@ async def smart_orchestrator_endpoint(
                 
                 # ── Update window memory ─────────────────────────────
                 if conv_id:
-                    add_to_memory(conv_id, req.task, final_result)
+                    add_to_memory(conv_id, req.task, assistant_content_to_store)
                     
             except Exception as db_err:
                 print(f"[chat_router] DB persist error: {db_err}")
