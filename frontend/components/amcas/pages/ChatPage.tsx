@@ -449,7 +449,7 @@ export default function ChatPage() {
           updateChatMessage(assistantId, {
             meta: result.meta,
             processingIndicator: undefined,
-            whatHappened: (result as any).whatHappened,
+            preThinking: result.preThinking,
           });
         } else {
           // deep-research: use orchestrator with SSE streaming
@@ -568,7 +568,7 @@ export default function ChatPage() {
           updateChatMessage(assistantId, {
             meta: result.meta,
             processingIndicator: undefined,
-            whatHappened: (result as any).whatHappened,
+            preThinking: result.preThinking,
           });
         }
       } else {

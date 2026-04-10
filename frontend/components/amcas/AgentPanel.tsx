@@ -197,6 +197,39 @@ export default function AgentPanel() {
     }
   }, [activeAgentId, activeView]);
 
+  // Keep active view valid and visible when panel is opened/hydrated
+  useEffect(() => {
+    if (!isPanelOpen) return;
+
+    const activeAgentExists =
+      activeView?.type === "agent" ? Boolean(agents[activeView.id]) : false;
+    const activeFileExists =
+      activeView?.type === "file" ? Boolean(files[activeView.index]) : false;
+
+    if (activeView && (activeAgentExists || activeFileExists)) return;
+
+    if (files.length > 0) {
+      const nextFileIndex = activeFileIndex ?? 0;
+      setActiveFileIndex(nextFileIndex);
+      setActiveView({ type: "file", index: nextFileIndex });
+      return;
+    }
+
+    if (activeAgentId && agents[activeAgentId]) {
+      setActiveView({ type: "agent", id: activeAgentId });
+      return;
+    }
+
+    const firstAgent = Object.values(agents)[0];
+    if (firstAgent) {
+      setActiveAgentId(firstAgent.id);
+      setActiveView({ type: "agent", id: firstAgent.id });
+      return;
+    }
+
+    setActiveView(null);
+  }, [isPanelOpen, activeView, files, agents, activeFileIndex, activeAgentId, setActiveAgentId, setActiveFileIndex]);
+
   const agentList = Object.values(agents);
 
   const renderContent = () => {

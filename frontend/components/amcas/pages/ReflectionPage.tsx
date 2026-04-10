@@ -1,6 +1,7 @@
 "use client";
 
-import { REFLECTION_DATA } from "@/lib/mock-api";
+import { useEffect, useMemo, useState } from "react";
+import { getReflectionData, ReflectionData } from "@/lib/api";
 import RadarChart from "../RadarChart";
 import ReflectionReport from "../ReflectionReport";
 import ConfidenceBar from "../ConfidenceBar";
@@ -8,13 +9,56 @@ import { FlaskConical, Brain, CheckCircle2, XCircle, TrendingUp, Shield } from "
 import { cn } from "@/lib/utils";
 
 export default function ReflectionPage() {
-  const { scores, radarData, issues } = REFLECTION_DATA;
+  const [reflectionData, setReflectionData] = useState<ReflectionData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const scoreItems = [
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await getReflectionData();
+        if (mounted) setReflectionData(data);
+      } catch (err) {
+        if (mounted) {
+          setError(err instanceof Error ? err.message : "Failed to load reflection data.");
+        }
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const fallbackData: ReflectionData = {
+    scores: {
+      confidenceScore: 0,
+      logicalConsistency: 0,
+      factualReliability: 0,
+      selfCorrectionTriggered: false,
+    },
+    radarData: [
+      { metric: "Planning", value: 0 },
+      { metric: "Reasoning", value: 0 },
+      { metric: "Verification", value: 0 },
+      { metric: "Adaptation", value: 0 },
+      { metric: "Confidence", value: 0 },
+    ],
+    issues: [],
+  };
+
+  const { scores, radarData, issues } = reflectionData ?? fallbackData;
+
+  const scoreItems = useMemo(() => [
     { label: "Confidence Score", value: scores.confidenceScore, icon: TrendingUp, color: "text-primary" },
     { label: "Logical Consistency", value: scores.logicalConsistency, icon: Brain, color: "text-chart-2" },
     { label: "Factual Reliability", value: scores.factualReliability, icon: Shield, color: "text-chart-3" },
-  ];
+  ], [scores.confidenceScore, scores.logicalConsistency, scores.factualReliability]);
 
   return (
     <div className="h-full overflow-y-auto font-mono">
@@ -28,6 +72,15 @@ export default function ReflectionPage() {
       </div>
 
       <div className="p-5 space-y-5">
+        {loading && (
+          <div className="text-[10px] tracking-widest text-muted-foreground uppercase">Loading reflection telemetry...</div>
+        )}
+        {error && (
+          <div className="text-[10px] tracking-widest text-destructive uppercase">
+            Reflection data unavailable: {error}
+          </div>
+        )}
+
         {/* Score cards */}
         <div className="grid grid-cols-4 gap-3">
           {scoreItems.map((item) => {
@@ -67,7 +120,7 @@ export default function ReflectionPage() {
             </div>
             <p className="text-[9px] text-muted-foreground leading-relaxed tracking-wide">
               {scores.selfCorrectionTriggered
-                ? "Applied corrections to 2 reasoning steps."
+                ? `Applied corrections informed by ${issues.length} detected issue${issues.length === 1 ? "" : "s"}.`
                 : "All validation checks passed cleanly."}
             </p>
           </div>
@@ -104,7 +157,13 @@ export default function ReflectionPage() {
               <div className="flex-1 h-px bg-border" />
               <span className="text-[9px] font-mono text-muted-foreground">{issues.length} issues</span>
             </div>
-            <ReflectionReport issues={issues} />
+            {issues.length > 0 ? (
+              <ReflectionReport issues={issues} />
+            ) : (
+              <div className="border border-border bg-card p-4 text-[10px] text-muted-foreground tracking-wide uppercase">
+                No detected mistakes to report.
+              </div>
+            )}
           </div>
         </div>
 

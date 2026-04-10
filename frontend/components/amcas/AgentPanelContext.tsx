@@ -31,6 +31,7 @@ interface AgentPanelContextType {
   upsertFileData: (filename: string, content: string, language: string, isStreaming: boolean) => void;
   setActiveFileIndex: (index: number | null) => void;
   clearFiles: () => void;
+  hydratePanelData: (payload: { agents: AgentData[]; files: CodeFile[]; openPanel?: boolean }) => void;
 }
 
 const AgentPanelContext = createContext<AgentPanelContextType | undefined>(undefined);
@@ -57,22 +58,43 @@ export function AgentPanelProvider({ children }: { children: ReactNode }) {
   };
 
   const upsertFileData = (filename: string, content: string, language: string, isStreaming: boolean) => {
+    let nextIndex: number | null = null;
     setFiles(prev => {
       const existingIndex = prev.findIndex(f => f.filename === filename);
       if (existingIndex >= 0) {
         const updated = [...prev];
         updated[existingIndex] = { filename, content, language, isStreaming };
+        nextIndex = existingIndex;
         return updated;
       }
+      nextIndex = prev.length;
       return [...prev, { filename, content, language, isStreaming }];
     });
-    // Auto-focus the new/updated file
-    setFiles(prev => {
-      const idx = prev.findIndex(f => f.filename === filename);
-      if (idx >= 0) setActiveFileIndex(idx);
-      return prev;
-    });
+    if (nextIndex !== null) {
+      setActiveFileIndex(nextIndex);
+    }
     setIsPanelOpen(true);
+  };
+
+  const hydratePanelData = ({
+    agents: nextAgents,
+    files: nextFiles,
+    openPanel = false,
+  }: {
+    agents: AgentData[];
+    files: CodeFile[];
+    openPanel?: boolean;
+  }) => {
+    const mappedAgents = nextAgents.reduce<Record<string, AgentData>>((acc, agent) => {
+      acc[agent.id] = agent;
+      return acc;
+    }, {});
+
+    setAgents(mappedAgents);
+    setFiles(nextFiles);
+    setActiveAgentId(nextAgents[0]?.id ?? null);
+    setActiveFileIndex(nextFiles.length > 0 ? 0 : null);
+    setIsPanelOpen(openPanel);
   };
 
   const clearAgents = () => {
@@ -90,7 +112,7 @@ export function AgentPanelProvider({ children }: { children: ReactNode }) {
     <AgentPanelContext.Provider value={{
       agents, activeAgentId, isPanelOpen,
       upsertAgentData, setActiveAgentId, setIsPanelOpen, clearAgents,
-      files, activeFileIndex, upsertFileData, setActiveFileIndex, clearFiles,
+      files, activeFileIndex, upsertFileData, setActiveFileIndex, clearFiles, hydratePanelData,
     }}>
       {children}
     </AgentPanelContext.Provider>

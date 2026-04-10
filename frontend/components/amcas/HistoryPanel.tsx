@@ -2,14 +2,182 @@
 
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { getHistory, getConversationMessages, renameConversation, deleteConversation, clearAllHistory, HistoryConversation, HistoryMessage } from "@/lib/api";
-import { useAppStore } from "@/lib/store";
+import {
+  getHistory,
+  getConversationMessages,
+  renameConversation,
+  deleteConversation,
+  clearAllHistory,
+  HistoryConversation,
+  MessagePreThinking,
+  CodePreThinking,
+  DeepResearchPreThinking,
+  CodeCompleteMarker,
+} from "@/lib/api";
+import { useAppStore, type ChatMessage as StoreChatMessage, type ChatMode } from "@/lib/store";
+import { useAgentPanel, type AgentData, type CodeFile } from "./AgentPanelContext";
 import { X, MessageSquare, Clock, Trash2, Loader2, Edit2, Check, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface HistoryPanelProps {
   isOpen: boolean;
   onClose: () => void;
+}
+
+const hasNonEmptyText = (value: string | undefined): value is string =>
+  typeof value === "string" && value.trim().length > 0;
+
+const getErrorMessage = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message ? error.message : fallback;
+
+function isCodeCompleteMarker(marker: unknown): marker is CodeCompleteMarker {
+  if (!marker || typeof marker !== "object") return false;
+  const candidate = marker as Partial<CodeCompleteMarker>;
+  return (
+    candidate.type === "code_complete" &&
+    typeof candidate.file_count === "number" &&
+    Array.isArray(candidate.filenames) &&
+    candidate.filenames.every((name) => typeof name === "string")
+  );
+}
+
+function isCodePreThinking(preThinking: MessagePreThinking | null): preThinking is CodePreThinking {
+  if (!preThinking || typeof preThinking !== "object") return false;
+  const candidate = preThinking as CodePreThinking;
+  return (
+    candidate.route_path === "code" ||
+    hasNonEmptyText(candidate.problem_understanding) ||
+    hasNonEmptyText(candidate.approach) ||
+    (Array.isArray(candidate.agent_outputs) && candidate.agent_outputs.length > 0) ||
+    (Array.isArray(candidate.file_outputs) && candidate.file_outputs.length > 0) ||
+    isCodeCompleteMarker(candidate.final_marker)
+  );
+}
+
+function isDeepResearchPreThinking(
+  preThinking: MessagePreThinking | null
+): preThinking is DeepResearchPreThinking {
+  if (!preThinking || typeof preThinking !== "object") return false;
+  const candidate = preThinking as DeepResearchPreThinking;
+  return (
+    hasNonEmptyText(candidate.decomposition) ||
+    hasNonEmptyText(candidate.researcher1) ||
+    hasNonEmptyText(candidate.researcher2)
+  );
+}
+
+function buildDeepResearchHistoryContent(
+  assistantText: string,
+  preThinking: DeepResearchPreThinking
+): string {
+  return JSON.stringify({
+    type: "deep_research_phase",
+    phase: "final",
+    content: preThinking.decomposition || "",
+    researcher1: preThinking.researcher1 || "",
+    researcher2: preThinking.researcher2 || "",
+    aggregator: "",
+    finalReport: assistantText,
+    finalMeta: null,
+    skipTyping: true,
+  });
+}
+
+function buildCodeCompleteMarker(preThinking: CodePreThinking): CodeCompleteMarker | null {
+  if (isCodeCompleteMarker(preThinking.final_marker)) {
+    return preThinking.final_marker;
+  }
+  const filenames = Array.isArray(preThinking.file_outputs)
+    ? Array.from(
+        new Set(
+          preThinking.file_outputs
+            .map((file) => file.filename)
+            .filter((name): name is string => hasNonEmptyText(name))
+        )
+      )
+    : [];
+  if (filenames.length === 0) return null;
+  return {
+    type: "code_complete",
+    file_count: filenames.length,
+    filenames,
+  };
+}
+
+function buildCodeHistoryContent(
+  assistantText: string,
+  preThinking: CodePreThinking
+): string {
+  const problemUnderstanding = preThinking.problem_understanding?.trim() ?? "";
+  const approach = preThinking.approach?.trim() ?? "";
+
+  if (problemUnderstanding || approach) {
+    return JSON.stringify({
+      type: "code_pipeline_phase",
+      phase: "final",
+      problemUnderstanding,
+      approach,
+      code: "",
+      finalResult: assistantText,
+      skipTyping: true,
+    });
+  }
+
+  const finalMarker = buildCodeCompleteMarker(preThinking);
+  if (finalMarker) {
+    return JSON.stringify(finalMarker);
+  }
+
+  if (hasNonEmptyText(assistantText)) {
+    return assistantText;
+  }
+
+  const agentOutputCount = Array.isArray(preThinking.agent_outputs)
+    ? preThinking.agent_outputs.length
+    : 0;
+  if (agentOutputCount > 0) {
+    return `Code generation completed with ${agentOutputCount} agent update${agentOutputCount === 1 ? "" : "s"}.`;
+  }
+  return "Code generation completed.";
+}
+
+function buildAssistantHistoryContent(
+  assistantTextRaw: string | undefined,
+  preThinking: MessagePreThinking | null
+): string {
+  const assistantText = assistantTextRaw?.trim() ?? "";
+  if (assistantText.startsWith("{") && assistantText.includes('"type"')) {
+    return assistantText;
+  }
+
+  if (isCodePreThinking(preThinking)) {
+    return buildCodeHistoryContent(assistantText, preThinking);
+  }
+  if (isDeepResearchPreThinking(preThinking)) {
+    return buildDeepResearchHistoryContent(assistantText, preThinking);
+  }
+  return assistantText;
+}
+
+function normalizeAgentOutputs(preThinking: CodePreThinking): AgentData[] {
+  return (preThinking.agent_outputs ?? [])
+    .map((agent, idx) => ({
+      id: agent.agent_id?.trim() || `history-agent-${idx + 1}`,
+      name: agent.agent_name?.trim() || `Agent ${idx + 1}`,
+      content: agent.content ?? "",
+    }))
+    .filter((agent) => hasNonEmptyText(agent.content));
+}
+
+function normalizeFileOutputs(preThinking: CodePreThinking): CodeFile[] {
+  return (preThinking.file_outputs ?? [])
+    .map((file, idx) => ({
+      filename: file.filename?.trim() || `history-file-${idx + 1}`,
+      content: file.content ?? "",
+      language: file.language?.trim() || "text",
+      isStreaming: false,
+    }))
+    .filter((file) => hasNonEmptyText(file.content));
 }
 
 export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelProps>) {
@@ -19,7 +187,8 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const navigate = useNavigate();
-  const { setCurrentChat, clearChatMessages, addChatMessage, setConversationId } = useAppStore();
+  const { hydrateChatSession } = useAppStore();
+  const { hydratePanelData } = useAgentPanel();
 
   useEffect(() => {
     if (isOpen) {
@@ -28,13 +197,20 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
   }, [isOpen]);
 
   async function loadHistory() {
+    if (conversations.length > 0) {
+      getHistory()
+        .then((data) => setConversations(data))
+        .catch((err: unknown) => console.warn("Failed to refresh history:", err));
+      return;
+    }
+
     try {
       setLoading(true);
       setError(null);
       const data = await getHistory();
       setConversations(data);
-    } catch (err: any) {
-      setError(err.message || "Failed to load history");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Failed to load history"));
     } finally {
       setLoading(false);
     }
@@ -42,20 +218,24 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
 
   const handleSelectConversation = async (conv: HistoryConversation) => {
     if (conv.type === "debate") {
+      hydratePanelData({ agents: [], files: [], openPanel: false });
       navigate("/debate");
     } else {
       try {
-        // Fetch messages from backend
-        const data = await getConversationMessages(conv.id);
-        // Clear current chat and populate with fetched messages
-        clearChatMessages();
-        setConversationId(conv.id);
-        // Convert backend messages to frontend ChatMessage format
+        const data =
+          conv.messages.length > 0
+            ? conv
+            : await getConversationMessages(conv.id);
+
+        const hydratedMessages: StoreChatMessage[] = [];
+        let latestCodePreThinking: CodePreThinking | null = null;
+        let hydratedMode: ChatMode = "standard";
+
         for (const msg of data.messages) {
-          for (const entry of msg.content) {
+          for (const [entryIndex, entry] of msg.content.entries()) {
             if (entry.user) {
-              addChatMessage({
-                id: `${msg.id}-user`,
+              hydratedMessages.push({
+                id: `${msg.id}-user-${entryIndex}`,
                 role: "user",
                 content: entry.user,
                 mode: "standard",
@@ -64,29 +244,21 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
                 pdfs: entry.pdfs,
               });
             }
-            if (entry.assistant) {
+            const preThinking = msg.pre_thinking;
+            const assistantContent = buildAssistantHistoryContent(entry.assistant, preThinking);
+            if (assistantContent) {
               // Use reasoning_mode from backend to determine mode
               const mode = msg.reasoning_mode === "multi_agent" ? "multi-agent" as const : "standard" as const;
-              const whatHappened = (msg as any).what_happened;
+              hydratedMode = mode;
 
-              // If we have what_happened data, construct deep research JSON for UI rendering
-              let assistantContent = entry.assistant;
-              if (whatHappened && whatHappened.decomposition) {
-                assistantContent = JSON.stringify({
-                  type: "deep_research_phase",
-                  phase: "final",
-                  content: whatHappened.decomposition || "",
-                  researcher1: whatHappened.researcher1 || "",
-                  researcher2: whatHappened.researcher2 || "",
-                  aggregator: "",
-                  finalReport: entry.assistant,
-                  finalMeta: null,
-                  skipTyping: true, // Skip typing animation when loading from history
-                });
+              if (isCodePreThinking(preThinking)) {
+                latestCodePreThinking = preThinking;
+              } else if (isDeepResearchPreThinking(preThinking)) {
+                hydratedMode = "deep-research";
               }
 
-              addChatMessage({
-                id: `${msg.id}-assistant`,
+              hydratedMessages.push({
+                id: `${msg.id}-assistant-${entryIndex}`,
                 role: "assistant",
                 content: assistantContent,
                 mode,
@@ -96,15 +268,25 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
                   confidenceScore: Math.round(msg.confidence * 100),
                   reasoningDepth: 2,
                   retryCount: 0,
-                  toolsUsed: (entry as any).tools || [],
+                  toolsUsed: entry.tools || [],
                   logicalConsistency: msg.consistency != null ? Math.round(msg.consistency * 100) : undefined,
                 } : undefined,
-                whatHappened,
+                preThinking: preThinking ?? undefined,
               });
             }
           }
         }
-      } catch (err: any) {
+
+        hydrateChatSession(hydratedMessages, hydratedMode, conv.id);
+
+        const historyAgents = latestCodePreThinking ? normalizeAgentOutputs(latestCodePreThinking) : [];
+        const historyFiles = latestCodePreThinking ? normalizeFileOutputs(latestCodePreThinking) : [];
+        hydratePanelData({
+          agents: historyAgents,
+          files: historyFiles,
+          openPanel: historyAgents.length > 0 || historyFiles.length > 0,
+        });
+      } catch (err: unknown) {
         console.error("Failed to load conversation:", err);
         alert("Failed to load conversation messages");
       }
@@ -121,8 +303,8 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
       setConversations((prev) =>
         prev.map((c) => (c.id === id ? { ...c, title: editTitle.trim() } : c))
       );
-    } catch (err: any) {
-      alert(err.message || "Rename failed");
+    } catch (err: unknown) {
+      alert(getErrorMessage(err, "Rename failed"));
     }
     setEditingId(null);
     setEditTitle("");
@@ -133,9 +315,9 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
     if (!confirm("Delete this conversation?")) return;
     try {
       await deleteConversation(id);
-      setConversations((prev) => prev.filter((c) => c.id === id));
-    } catch (err: any) {
-      alert(err.message || "Delete failed");
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+    } catch (err: unknown) {
+      alert(getErrorMessage(err, "Delete failed"));
     }
   };
 
@@ -144,8 +326,8 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
     try {
       await clearAllHistory();
       setConversations([]);
-    } catch (err: any) {
-      alert(err.message || "Clear failed");
+    } catch (err: unknown) {
+      alert(getErrorMessage(err, "Clear failed"));
     }
   };
 

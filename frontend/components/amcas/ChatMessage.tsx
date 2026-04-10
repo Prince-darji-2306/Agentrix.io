@@ -33,7 +33,7 @@ interface CodePipelinePhaseData {
 
 function CodePipelinePhaseUI({ data, assistantId, isProcessing }: { data: CodePipelinePhaseData, assistantId: string, isProcessing: boolean }) {
   const { phase, problemUnderstanding, approach, skipTyping } = data;
-  const { isPanelOpen, setIsPanelOpen, agents } = useAgentPanel();
+  const { isPanelOpen, setIsPanelOpen, agents, setActiveAgentId } = useAgentPanel();
 
   const problemTyping = useTypingAnimation(problemUnderstanding, 3, skipTyping ?? false);
   const approachTyping = useTypingAnimation(approach, 3, skipTyping ?? false);
@@ -84,7 +84,11 @@ function CodePipelinePhaseUI({ data, assistantId, isProcessing }: { data: CodePi
       {(phase === "code" || phase === "final" || hasAgents) && (
         <div className="pt-2 border-t border-border/40 mt-2">
           <button
-            onClick={() => setIsPanelOpen(!isPanelOpen)}
+            onClick={() => {
+              const firstAgentId = Object.keys(agents)[0];
+              if (firstAgentId) setActiveAgentId(firstAgentId);
+              setIsPanelOpen(!isPanelOpen);
+            }}
             className={cn(
               "flex items-center gap-2 px-3 py-1.5 border transition-all duration-200 group",
               isDropdownActive 
@@ -117,7 +121,7 @@ interface CodeCompleteData {
 }
 
 function CodeCompleteCard({ data }: { data: CodeCompleteData }) {
-  const { setIsPanelOpen } = useAgentPanel();
+  const { files, agents, setIsPanelOpen, setActiveFileIndex, setActiveAgentId } = useAgentPanel();
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -133,7 +137,15 @@ function CodeCompleteCard({ data }: { data: CodeCompleteData }) {
         ))}
       </div>
       <button
-        onClick={() => setIsPanelOpen(true)}
+        onClick={() => {
+          if (files.length > 0) {
+            setActiveFileIndex(0);
+          } else {
+            const firstAgentId = Object.keys(agents)[0];
+            if (firstAgentId) setActiveAgentId(firstAgentId);
+          }
+          setIsPanelOpen(true);
+        }}
         className="flex items-center gap-2 px-3 py-1.5 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 transition-all duration-200"
       >
         <ExternalLink className="w-3 h-3" />
@@ -157,7 +169,7 @@ interface DeepResearchPhaseData {
     confidence_score: number;
     logical_consistency: number;
     critic_feedback: string;
-    serious_mistakes: any[];
+    serious_mistakes: unknown[];
   } | null;
   skipTyping?: boolean;
 }
@@ -646,16 +658,57 @@ export default function ChatMessage({ message }: ChatMessageProps) {
             try {
               if (message.content.startsWith('{') && message.content.includes('"type":"deep_research_phase"')) {
                 const data: DeepResearchPhaseData = JSON.parse(message.content);
-                if (message.whatHappened) {
-                  data.researcher1 = message.whatHappened.researcher1 || data.researcher1;
-                  data.researcher2 = message.whatHappened.researcher2 || data.researcher2;
-                  data.content = message.whatHappened.decomposition || data.content;
+                if (message.preThinking) {
+                  data.researcher1 = message.preThinking.researcher1 || data.researcher1;
+                  data.researcher2 = message.preThinking.researcher2 || data.researcher2;
+                  data.content = message.preThinking.decomposition || data.content;
                 }
                 const shouldSkipTyping = data.skipTyping || !!message.meta || !isProcessing;
                 data.skipTyping = shouldSkipTyping;
                 return <DeepResearchPhaseUI data={data} />;
               }
             } catch {
+            }
+            if (!message.content.trim() && message.preThinking) {
+              const problemUnderstanding = message.preThinking.problem_understanding?.trim() ?? "";
+              const approach = message.preThinking.approach?.trim() ?? "";
+              if (problemUnderstanding || approach) {
+                return (
+                  <CodePipelinePhaseUI
+                    data={{
+                      type: "code_pipeline_phase",
+                      phase: "final",
+                      problemUnderstanding,
+                      approach,
+                      code: "",
+                      finalResult: "",
+                      skipTyping: true,
+                    }}
+                    assistantId={message.id}
+                    isProcessing={isProcessing}
+                  />
+                );
+              }
+
+              const markerFilenames = message.preThinking.final_marker?.filenames;
+              const outputFilenames = message.preThinking.file_outputs
+                ?.map((file) => file.filename?.trim())
+                .filter((filename): filename is string => !!filename);
+              const filenames = markerFilenames && markerFilenames.length > 0
+                ? markerFilenames
+                : outputFilenames ?? [];
+
+              if (filenames.length > 0) {
+                return (
+                  <CodeCompleteCard
+                    data={{
+                      type: "code_complete",
+                      file_count: filenames.length,
+                      filenames,
+                    }}
+                  />
+                );
+              }
             }
             return (
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>

@@ -5,6 +5,38 @@ import { nanoid } from "@/lib/nanoid";
 
 export type ChatMode = "standard" | "multi-agent" | "deep-research";
 
+export interface ChatCodeAgentOutput {
+  agent_id?: string;
+  agent_name?: string;
+  content?: string;
+}
+
+export interface ChatCodeFileOutput {
+  filename?: string;
+  language?: string;
+  index?: number;
+  total?: number;
+  content?: string;
+}
+
+export interface ChatCodeCompleteMarker {
+  type: "code_complete";
+  file_count: number;
+  filenames: string[];
+}
+
+export interface ChatMessagePreThinking {
+  decomposition?: string;
+  researcher1?: string;
+  researcher2?: string;
+  route_path?: string;
+  problem_understanding?: string;
+  approach?: string;
+  agent_outputs?: ChatCodeAgentOutput[];
+  file_outputs?: ChatCodeFileOutput[];
+  final_marker?: ChatCodeCompleteMarker;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -22,11 +54,7 @@ export interface ChatMessage {
   };
   pdfs?: string[];
   conversationId?: string; // Backend conversation_id for this message pair
-  whatHappened?: {
-    decomposition: string;
-    researcher1: string;
-    researcher2: string;
-  };
+  preThinking?: ChatMessagePreThinking;
 }
 
 export interface ChatSession {
@@ -97,6 +125,7 @@ interface AppState {
   chatSessions: ChatSession[];
   currentChatId: string | null;
   createChat: () => void;
+  hydrateChatSession: (messages: ChatMessage[], mode: ChatMode, backendConversationId?: string | null) => void;
   deleteChat: (id: string) => void;
   setCurrentChat: (id: string | null) => void;
   updateChatSession: (id: string, updates: Partial<Pick<ChatSession, 'title' | 'description' | 'backendConversationId'>>) => void;
@@ -255,6 +284,44 @@ export const useAppStore = create<AppState>((set, get) => ({
     } catch (e) {
       console.warn("Failed to create new chat:", e);
     }
+  },
+  hydrateChatSession: (messages, mode, backendConversationId) => {
+    set((state) => {
+      const existingIndex =
+        backendConversationId
+          ? state.chatSessions.findIndex((session) => session.backendConversationId === backendConversationId)
+          : -1;
+      const id = existingIndex >= 0 ? state.chatSessions[existingIndex].id : nanoid();
+      const now = new Date();
+      const userFirstMsg = messages.find((m) => m.role === "user");
+      const title = userFirstMsg?.content ? userFirstMsg.content.slice(0, 50) : "History Replay";
+      const newSession: ChatSession = {
+        id,
+        title,
+        description: "Loaded from history",
+        messages,
+        mode,
+        createdAt: now,
+        updatedAt: now,
+        backendConversationId: backendConversationId || undefined,
+      };
+      const updatedSessions =
+        existingIndex >= 0
+          ? state.chatSessions.map((session, index) => (index === existingIndex ? newSession : session))
+          : [...state.chatSessions, newSession];
+      try {
+        localStorage.setItem("agentrix_chat_history", JSON.stringify(updatedSessions));
+      } catch (e) {
+        console.warn("Failed to persist history replay session:", e);
+      }
+      return {
+        chatMessages: messages,
+        chatSessions: updatedSessions,
+        currentChatId: id,
+        selectedMode: mode,
+        conversationId: backendConversationId || null,
+      };
+    });
   },
   deleteChat: (id) => {
     set((state) => {

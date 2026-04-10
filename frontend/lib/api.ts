@@ -56,11 +56,56 @@ export async function login(email: string, password: string): Promise<AuthRespon
 export interface HistoryMessage {
   id: string;
   reasoning_mode: string;
-  content: Array<{ user: string; assistant: string; pdfs?: string[] }>;
+  content: HistoryMessageContentEntry[];
   confidence: number | null;
   consistency: number | null;
+  pre_thinking: MessagePreThinking | null;
   created_at: string;
 }
+
+export interface HistoryMessageContentEntry {
+  user?: string;
+  assistant?: string;
+  pdfs?: string[];
+  tools?: string[];
+}
+
+export interface DeepResearchPreThinking {
+  decomposition?: string;
+  researcher1?: string;
+  researcher2?: string;
+}
+
+export interface CodeAgentOutput {
+  agent_id?: string;
+  agent_name?: string;
+  content?: string;
+}
+
+export interface CodeFileOutput {
+  filename?: string;
+  language?: string;
+  index?: number;
+  total?: number;
+  content?: string;
+}
+
+export interface CodeCompleteMarker {
+  type: "code_complete";
+  file_count: number;
+  filenames: string[];
+}
+
+export interface CodePreThinking {
+  route_path?: string;
+  problem_understanding?: string;
+  approach?: string;
+  agent_outputs?: CodeAgentOutput[];
+  file_outputs?: CodeFileOutput[];
+  final_marker?: CodeCompleteMarker;
+}
+
+export type MessagePreThinking = DeepResearchPreThinking | CodePreThinking | Record<string, unknown>;
 
 export interface HistoryConversation {
   id: string;
@@ -154,6 +199,219 @@ export async function getMemoryPdfs(): Promise<PdfSummary[]> {
   return data.pdfs || [];
 }
 
+// ─── Reflection API ────────────────────────────────────────────────────────────
+
+export interface ReflectionIssue {
+  id: string;
+  issue: string;
+  improvement: string;
+  strategy: string;
+  severity: "low" | "medium" | "high";
+}
+
+export interface ReflectionScoreSnapshot {
+  confidenceScore: number;
+  logicalConsistency: number;
+  factualReliability: number;
+  selfCorrectionTriggered: boolean;
+}
+
+export interface ReflectionRadarPoint {
+  metric: string;
+  value: number;
+}
+
+export interface ReflectionData {
+  scores: ReflectionScoreSnapshot;
+  radarData: ReflectionRadarPoint[];
+  issues: ReflectionIssue[];
+}
+
+interface ReflectionEndpointIssue {
+  id?: string;
+  issue?: string;
+  description?: string;
+  improvement?: string;
+  strategy?: string;
+  severity?: string;
+}
+
+interface ReflectionEndpointPayload {
+  scores?: {
+    confidenceScore?: number;
+    confidence_score?: number;
+    logicalConsistency?: number;
+    logical_consistency?: number;
+    factualReliability?: number;
+    factual_reliability?: number;
+    selfCorrectionTriggered?: boolean;
+    self_correction_triggered?: boolean;
+  };
+  issues?: ReflectionEndpointIssue[];
+  report?: ReflectionEndpointIssue[];
+  radarData?: ReflectionRadarPoint[];
+}
+
+interface AdminMessagesResponse {
+  data?: Array<{
+    confidence?: number | null;
+    consistency?: number | null;
+  }>;
+}
+
+interface AdminMistakesResponse {
+  data?: Array<{
+    id?: string;
+    description?: string;
+    severity?: string;
+  }>;
+}
+
+function clampScore(value: number, min = 0, max = 100): number {
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function normalizePercent(value: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (!Number.isFinite(value)) return null;
+  return value <= 1 ? value * 100 : value;
+}
+
+function normalizeSeverity(severity: string | undefined): "low" | "medium" | "high" {
+  const s = (severity || "").toLowerCase();
+  if (s === "high" || s === "critical") return "high";
+  if (s === "medium" || s === "med") return "medium";
+  return "low";
+}
+
+function defaultImprovement(severity: "low" | "medium" | "high"): string {
+  if (severity === "high") return "Escalated to stricter validation and cross-checking gates.";
+  if (severity === "medium") return "Added additional reasoning checks before final response.";
+  return "Applied lightweight post-response self-review for similar prompts.";
+}
+
+function defaultStrategy(severity: "low" | "medium" | "high"): string {
+  if (severity === "high") return "Require tool-backed evidence and second-pass verification for claims.";
+  if (severity === "medium") return "Increase consistency checks on multi-step reasoning chains.";
+  return "Track pattern frequency and auto-flag repeated low-severity slips.";
+}
+
+function buildRadar(scores: ReflectionScoreSnapshot, issueCount: number, highSeverityCount: number): ReflectionRadarPoint[] {
+  return [
+    { metric: "Planning", value: scores.logicalConsistency },
+    { metric: "Reasoning", value: scores.confidenceScore },
+    { metric: "Verification", value: scores.factualReliability },
+    {
+      metric: "Adaptation",
+      value: clampScore(72 + (scores.selfCorrectionTriggered ? 14 : 4) - highSeverityCount * 4 - Math.min(issueCount, 6)),
+    },
+    { metric: "Confidence", value: scores.confidenceScore },
+  ];
+}
+
+function parseReflectionEndpointPayload(raw: ReflectionEndpointPayload): ReflectionData | null {
+  const rawScores = raw.scores;
+  if (!rawScores) return null;
+
+  const confidence = rawScores.confidenceScore ?? rawScores.confidence_score;
+  const consistency = rawScores.logicalConsistency ?? rawScores.logical_consistency;
+  const factual = rawScores.factualReliability ?? rawScores.factual_reliability;
+  const selfCorrection =
+    rawScores.selfCorrectionTriggered ?? rawScores.self_correction_triggered ?? false;
+
+  if (confidence === undefined || consistency === undefined) return null;
+
+  const issuesRaw = raw.issues ?? raw.report ?? [];
+  const issues: ReflectionIssue[] = issuesRaw.map((item, idx) => {
+    const severity = normalizeSeverity(item.severity);
+    return {
+      id: item.id || `issue-${idx + 1}`,
+      issue: item.issue || item.description || "Detected reasoning issue.",
+      improvement: item.improvement || defaultImprovement(severity),
+      strategy: item.strategy || defaultStrategy(severity),
+      severity,
+    };
+  });
+
+  const scores: ReflectionScoreSnapshot = {
+    confidenceScore: clampScore(confidence),
+    logicalConsistency: clampScore(consistency),
+    factualReliability: clampScore(factual ?? ((confidence + consistency) / 2)),
+    selfCorrectionTriggered: Boolean(selfCorrection || issues.length > 0),
+  };
+
+  const highCount = issues.filter((i) => i.severity === "high").length;
+  return {
+    scores,
+    radarData: raw.radarData?.length ? raw.radarData : buildRadar(scores, issues.length, highCount),
+    issues,
+  };
+}
+
+function aggregateFromAdminData(messages: AdminMessagesResponse, mistakes: AdminMistakesResponse): ReflectionData {
+  const messageRows = messages.data ?? [];
+  const mistakeRows = mistakes.data ?? [];
+
+  const confidenceValues = messageRows
+    .map((m) => normalizePercent(m.confidence))
+    .filter((v): v is number => v !== null);
+  const consistencyValues = messageRows
+    .map((m) => normalizePercent(m.consistency))
+    .filter((v): v is number => v !== null);
+
+  const avg = (values: number[], fallback: number) =>
+    values.length ? values.reduce((sum, n) => sum + n, 0) / values.length : fallback;
+
+  const severityCount = { high: 0, medium: 0, low: 0 };
+  const issues: ReflectionIssue[] = mistakeRows.map((item, idx) => {
+    const severity = normalizeSeverity(item.severity);
+    severityCount[severity] += 1;
+    return {
+      id: item.id || `mistake-${idx + 1}`,
+      issue: item.description || "Detected reasoning issue.",
+      improvement: defaultImprovement(severity),
+      strategy: defaultStrategy(severity),
+      severity,
+    };
+  });
+
+  const confidenceScore = clampScore(avg(confidenceValues, 82));
+  const logicalConsistency = clampScore(avg(consistencyValues, 84));
+  const issuePenalty = severityCount.high * 12 + severityCount.medium * 7 + severityCount.low * 4;
+  const densityPenalty =
+    messageRows.length > 0 ? Math.min(15, Math.round((mistakeRows.length / messageRows.length) * 30)) : 0;
+  const factualReliability = clampScore(92 - issuePenalty - densityPenalty, 35, 98);
+
+  const scores: ReflectionScoreSnapshot = {
+    confidenceScore,
+    logicalConsistency,
+    factualReliability,
+    selfCorrectionTriggered: issues.length > 0,
+  };
+
+  return {
+    scores,
+    radarData: buildRadar(scores, issues.length, severityCount.high),
+    issues,
+  };
+}
+
+export async function getReflectionData(): Promise<ReflectionData> {
+  const reflectionCandidates = ["/reflection/summary", "/reflection"];
+  for (const endpoint of reflectionCandidates) {
+    try {
+      const res = await fetch(`${API_BASE}${endpoint}`, { headers: getAuthHeaders() });
+      if (!res.ok) continue;
+      const parsed = parseReflectionEndpointPayload(await res.json());
+      if (parsed) return parsed;
+    } catch {
+      // Try next reflection endpoint variant
+    }
+  }
+
+  throw new Error("Reflection API error: unable to load user-scoped reflection summary.");
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface ChatApiResponse {
@@ -206,11 +464,7 @@ export interface ChatResult {
     critic_feedback?: string;
   }; // only present when orchestrator was used
   conversation_id?: string;
-  whatHappened?: {
-    decomposition: string;
-    researcher1: string;
-    researcher2: string;
-  };
+  preThinking?: DeepResearchPreThinking;
 }
 
 // ─── Smart Orchestrator (SSE) ────────────────────────────────────────────────
@@ -394,7 +648,7 @@ export async function callOrchestratorApi(
   pdfs?: string[],
   onNodeUpdate?: (event: SmartSSEEvent) => void,
   onContentChunk?: (section: string, content: string) => void
-): Promise<ChatResult & { orchestratorRaw?: OrchestratorApiResponse; whatHappened?: { decomposition: string; researcher1: string; researcher2: string } }> {
+): Promise<ChatResult & { orchestratorRaw?: OrchestratorApiResponse; preThinking?: DeepResearchPreThinking }> {
   const body: Record<string, unknown> = { task };
   if (conversationId) body.conversation_id = conversationId;
   if (pdfs) body.pdfs = pdfs;
@@ -418,7 +672,11 @@ export async function callOrchestratorApi(
   let finalResult = "";
   let finalMeta: any = {};
   let backendConversationId: string | undefined;
-  let whatHappened = { decomposition: "", researcher1: "", researcher2: "" };
+  let preThinking: DeepResearchPreThinking = {
+    decomposition: "",
+    researcher1: "",
+    researcher2: "",
+  };
 
   while (true) {
     const { done, value } = await reader.read();
@@ -445,20 +703,20 @@ export async function callOrchestratorApi(
                   .filter((st: any) => st.agent_type === "researcher")
                   .map((st: any, i: number) => `- **Researcher ${st.id}:** ${st.description}`)
                   .join("\n");
-                whatHappened.decomposition = descriptions;
+                preThinking.decomposition = descriptions;
                 if (onContentChunk) onContentChunk("decomposition", descriptions);
               }
               break;
 
             case "content_chunk":
               if (event.section === "decomposition") {
-                whatHappened.decomposition = event.content || "";
+                preThinking.decomposition = event.content || "";
                 if (onContentChunk) onContentChunk("decomposition", event.content);
               } else if (event.section === "researcher_1") {
-                whatHappened.researcher1 = event.content || "";
+                preThinking.researcher1 = event.content || "";
                 if (onContentChunk) onContentChunk("researcher_1", event.content);
               } else if (event.section === "researcher_2") {
-                whatHappened.researcher2 = event.content || "";
+                preThinking.researcher2 = event.content || "";
                 if (onContentChunk) onContentChunk("researcher_2", event.content);
               } else if (event.section === "aggregation") {
                 if (onContentChunk) onContentChunk("aggregation", event.content);
@@ -500,7 +758,7 @@ export async function callOrchestratorApi(
     },
     orchestratorRaw,
     conversation_id: backendConversationId,
-    whatHappened,
+    preThinking,
   };
 }
 
@@ -908,8 +1166,8 @@ export async function generateResponse(
     }
   }, 1500);
 
-  // Capture what_happened from content_chunk events
-  let whatHappened: { decomposition: string; researcher1: string; researcher2: string } = {
+  // Capture pre_thinking from content_chunk events
+  let preThinking: DeepResearchPreThinking = {
     decomposition: "",
     researcher1: "",
     researcher2: "",
@@ -917,11 +1175,11 @@ export async function generateResponse(
 
   const handleContentChunk = (section: string, content: string) => {
     if (section === "decomposition") {
-      whatHappened.decomposition = content;
+      preThinking.decomposition = content;
     } else if (section === "researcher_1") {
-      whatHappened.researcher1 = content;
+      preThinking.researcher1 = content;
     } else if (section === "researcher_2") {
-      whatHappened.researcher2 = content;
+      preThinking.researcher2 = content;
     }
     if (onContentChunk) {
       onContentChunk(section, content);
@@ -936,11 +1194,11 @@ export async function generateResponse(
         content: result.orchestratorRaw.final_result,
       };
     }
-    // Include what_happened if we have decomposition
-    if (whatHappened.decomposition) {
+    // Include pre_thinking if we have decomposition
+    if (preThinking.decomposition) {
       result = {
         ...result,
-        whatHappened,
+        preThinking,
       };
     }
     return result;
