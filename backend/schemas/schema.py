@@ -1,7 +1,7 @@
 import operator
 from pydantic import BaseModel
 from langchain_core.messages import BaseMessage
-from typing import TypedDict, Annotated, Sequence, List, Optional, Callable
+from typing import TypedDict, Annotated, Sequence, List, Optional
 
 class RegisterRequest(BaseModel):
     email: str
@@ -15,16 +15,27 @@ class LoginRequest(BaseModel):
 
 class QueryRequest(BaseModel):
     query: str
-
-class TaskRequest(BaseModel):
-    task: str
+    conversation_id: str | None = None
+    pdfs: list[str] | None = None
 
 class DebateRequest(BaseModel):
     topic: str
     rounds: int = 3
 
+class TaskRequest(BaseModel):
+    task: str
+    conversation_id: str | None = None
+
+class SmartOrchestratorRequest(BaseModel):
+    task: str
+    conversation_id: str | None = None
+    pdfs: list[str] | None = None
+
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
+
+class RenameRequest(BaseModel):
+    title: str
 
 class OrchestratorState(TypedDict):
     original_task: str
@@ -49,10 +60,6 @@ class CodeModeState(TypedDict):
     serious_mistakes: List[dict]
     graph_nodes: List[dict]
     graph_edges: List[dict]
-
-
-class SmartOrchestratorRequest(BaseModel):
-    task: str
 
 
 class CodingSubtask(TypedDict):

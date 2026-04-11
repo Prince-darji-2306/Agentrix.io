@@ -2,8 +2,16 @@ import json
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from core import get_current_user
-from services import run_debate_stream, structure_debate_rounds
-from repositories import create_conversation, create_debate_session, update_conversation_timestamp
+
+from services import (
+    run_debate_stream,
+    structure_debate_rounds
+)
+from repositories import (
+    create_conversation,
+    create_debate_session,
+    update_conversation_timestamp
+)
 
 router = APIRouter(tags=["debate"])
 

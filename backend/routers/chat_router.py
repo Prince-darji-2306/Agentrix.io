@@ -2,17 +2,24 @@ import json
 import logging
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from core import get_current_user
+
+from schemas import (
+    QueryRequest,
+    TaskRequest,
+    SmartOrchestratorRequest
+)
+
 from services import (
     run_tool_agent,
     run_tool_agent_stream_sse,
     smart_orchestrator_stream,
     get_conversation_memory_context_async,
     run_orchestrator_stream_with_state,
-    _to_non_empty_text
+    _to_non_empty_text,
+    add_to_memory
 )
-from services.memory_service import add_to_memory
+
 from repositories import (
     create_conversation,
     append_message,
@@ -24,21 +31,6 @@ from repositories import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
-
-
-class QueryRequest(BaseModel):
-    query: str
-    conversation_id: str | None = None
-    pdfs: list[str] | None = None
-
-class TaskRequest(BaseModel):
-    task: str
-    conversation_id: str | None = None
-
-class SmartOrchestratorRequest(BaseModel):
-    task: str
-    conversation_id: str | None = None
-    pdfs: list[str] | None = None
 
 
 @router.post("/chat")

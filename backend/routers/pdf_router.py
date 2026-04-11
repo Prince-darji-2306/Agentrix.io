@@ -1,10 +1,15 @@
 import os
 import shutil
 import tempfile
-from fastapi import APIRouter, HTTPException, UploadFile, File, Depends
+from fastapi import APIRouter, UploadFile, File, Depends
 from core import get_current_user
 from utils.pdf_processor import process_pdfs
-from repositories import create_conversation, update_conversation_timestamp, get_user_pdf_summaries, get_pdf_quality_scores
+from repositories import (
+    create_conversation,
+    update_conversation_timestamp,
+    get_user_pdf_summaries,
+    get_pdf_quality_scores
+)
 
 router = APIRouter(tags=["pdf"])
 

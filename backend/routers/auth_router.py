@@ -1,8 +1,7 @@
 from fastapi import APIRouter, HTTPException
-# from pydantic import BaseModel
 from core import hash_password, verify_password, create_token
 from repositories import create_user, get_user_by_email
-from schemas.schema import RegisterRequest, LoginRequest
+from schemas import RegisterRequest, LoginRequest
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

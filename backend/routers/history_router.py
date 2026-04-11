@@ -8,13 +8,16 @@ from repositories import (
     clear_all_history,
     get_conversation_with_messages,
 )
-from services.memory_service import clear_conversation_memory, get_all_conversations
+from services import (
+    clear_conversation_memory,
+    get_all_conversations
+)
+
+from schemas import (
+    RenameRequest
+)
 
 router = APIRouter(tags=["history"])
-
-
-class RenameRequest(BaseModel):
-    title: str
 
 
 @router.get("/history")
