@@ -14,8 +14,8 @@ from agents import (
     format_output_node,
     get_node_coords,
 )
-from services.agent_service import run_tool_agent, run_tool_agent_stream_sse
-from services.orchestrator_service import run_orchestrator, run_orchestrator_stream_with_state
+from services.agent_service import run_tool_agent_stream_sse
+from services.orchestrator_service import run_orchestrator_stream_with_state
 from services.memory_service import get_conversation_memory_context_async, format_memory_block
 from schemas.schema import CodingAgentState
 

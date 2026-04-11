@@ -2,15 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core.exceptions import register_exception_handlers
 from repositories import init_db, close_pool, init_qdrant_collections
-from routers.auth_router import router as auth_router
-from routers.chat_router import router as chat_router
-from routers.history_router import router as history_router
-from routers.pdf_router import router as pdf_router
-from routers.debate_router import router as debate_router
-from routers.admin_router import router as admin_router
-from routers.reflection_router import router as reflection_router
-
-
+from routers import (
+    auth_router,
+    chat_router,
+    history_router,
+    pdf_router,
+    debate_router,
+    admin_router,
+    reflection_router
+)
 
 app = FastAPI(title="AI Agents Platform")
 
