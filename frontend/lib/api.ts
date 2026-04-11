@@ -421,16 +421,16 @@ export interface ChatApiResponse {
 }
 
 
-export interface OrchestratorSubtask {
+export interface DeepResearchSubtask {
   id: number;
   description: string;
   agent_type: string;
   result: string;
 }
 
-export interface OrchestratorApiResponse {
+export interface DeepResearchApiResponse {
   final_result: string;
-  subtasks: OrchestratorSubtask[];
+  subtasks: DeepResearchSubtask[];
   step_logs: string[];
   critic_confidence: number;
   critic_logical_consistency: number;
@@ -448,6 +448,19 @@ export interface DebateMessage {
   content?: string;
 }
 
+export interface DebateSessionRecord {
+  id: string;
+  user_id: string;
+  conversation_id: string;
+  topic: string;
+  debate_messages: Array<{
+    proposer?: string;
+    critic?: string;
+  }>;
+  verdict_text?: string | null;
+  created_at?: string;
+}
+
 export interface ChatResult {
   content: string;
   meta: {
@@ -458,11 +471,11 @@ export interface ChatResult {
     logicalConsistency?: number;
     criticFeedback?: string;
   };
-  orchestratorRaw?: OrchestratorApiResponse & {
+  deepResearchRaw?: DeepResearchApiResponse & {
     critic_confidence?: number;
     critic_logical_consistency?: number;
     critic_feedback?: string;
-  }; // only present when orchestrator was used
+  }; // only present when deep_research was used
   conversation_id?: string;
   preThinking?: DeepResearchPreThinking;
 }
@@ -508,7 +521,7 @@ export interface SmartSSEEvent {
     critic_feedback: string;
     retry_count: number;
     tools_used: string[];
-    orchestrator_raw?: OrchestratorApiResponse;
+    deep_research_raw?: DeepResearchApiResponse;
   };
 }
 
@@ -641,19 +654,19 @@ export async function* callChatApiStream(
   }
 }
 
-export async function callOrchestratorApi(
+export async function callDeepResearchApi(
   task: string,
   onLog: (log: string) => void,
   conversationId?: string | null,
   pdfs?: string[],
   onNodeUpdate?: (event: SmartSSEEvent) => void,
   onContentChunk?: (section: string, content: string) => void
-): Promise<ChatResult & { orchestratorRaw?: OrchestratorApiResponse; preThinking?: DeepResearchPreThinking }> {
+): Promise<ChatResult & { deepResearchRaw?: DeepResearchApiResponse; preThinking?: DeepResearchPreThinking }> {
   const body: Record<string, unknown> = { task };
   if (conversationId) body.conversation_id = conversationId;
   if (pdfs) body.pdfs = pdfs;
 
-  const res = await fetch(`${API_BASE}/orchestrator/task`, {
+  const res = await fetch(`${API_BASE}/deep_research/task`, {
     method: "POST",
     headers: getAuthHeaders(),
     body: JSON.stringify(body),
@@ -743,7 +756,8 @@ export async function callOrchestratorApi(
   }
 
   // Build result
-  const orchestratorRaw = finalMeta.orchestrator_raw || {};
+  const deepResearchRaw = finalMeta.deep_research_raw || {};
+
   const toolsUsed = finalMeta.tools_used || [];
 
   return {
@@ -756,7 +770,7 @@ export async function callOrchestratorApi(
       logicalConsistency: finalMeta.logical_consistency,
       criticFeedback: finalMeta.critic_feedback,
     },
-    orchestratorRaw,
+    deepResearchRaw: deepResearchRaw,
     conversation_id: backendConversationId,
     preThinking,
   };
@@ -806,6 +820,20 @@ export async function* streamDebate(
       }
     }
   }
+}
+
+export async function getDebateSession(conversationId: string): Promise<DebateSessionRecord | null> {
+  const res = await fetch(`${API_BASE}/debate/session/${encodeURIComponent(conversationId)}`, {
+    headers: getAuthHeaders(),
+  });
+
+  if (!res.ok) {
+    const error = await res.text();
+    throw new Error(`Debate session error: ${res.status} - ${error}`);
+  }
+
+  const data = await res.json();
+  return data.session ?? null;
 }
 
 // ─── Smart Orchestrator Stream ───────────────────────────────────────────────
@@ -986,7 +1014,7 @@ export async function generateResponse(
       retryCount: 0,
       toolsUsed: [],
     };
-    let orchestratorRaw: OrchestratorApiResponse | undefined;
+    let deepResearchRaw: DeepResearchApiResponse | undefined;
     let detectedPath: string | null = null;
     let codeContent = "";
     let backendConversationId: string | undefined;
@@ -1103,8 +1131,8 @@ export async function generateResponse(
                 logicalConsistency: event.meta.logical_consistency,
                 criticFeedback: event.meta.critic_feedback,
               };
-              if (event.meta.orchestrator_raw) {
-                orchestratorRaw = event.meta.orchestrator_raw;
+              if (event.meta.deep_research_raw) {
+                deepResearchRaw = event.meta.deep_research_raw;
               }
             }
             break;
@@ -1144,7 +1172,7 @@ export async function generateResponse(
     return {
       content: finalContent,
       meta: finalMeta,
-      orchestratorRaw,
+      deepResearchRaw,
       conversation_id: backendConversationId,
     };
   }
@@ -1187,11 +1215,11 @@ export async function generateResponse(
   };
 
   try {
-    let result = await callOrchestratorApi(prompt, (log) => onIndicator(log), conversationId, pdfs, onNodeUpdate, handleContentChunk);
-    if (result.orchestratorRaw) {
+    let result = await callDeepResearchApi(prompt, (log) => onIndicator(log), conversationId, pdfs, onNodeUpdate, handleContentChunk);
+    if (result.deepResearchRaw) {
       result = {
         ...result,
-        content: result.orchestratorRaw.final_result,
+        content: result.deepResearchRaw.final_result,
       };
     }
     // Include pre_thinking if we have decomposition

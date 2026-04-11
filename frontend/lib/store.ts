@@ -77,7 +77,12 @@ export interface DebateMessage {
   conversationId?: string; // Backend conversation_id
 }
 
-export type GraphNodeType = "orchestrator" | "agent" | "critic" | "output" | "planner" | "coder" | "aggregator" | "reviewer";
+export interface DebateSessionState {
+  topic: string;
+  conversationId: string | null;
+}
+
+export type GraphNodeType = "deep_research" | "agent" | "critic" | "output" | "planner" | "coder" | "aggregator" | "reviewer";
 
 export interface GraphNode {
   id: string;
@@ -114,6 +119,8 @@ interface AppState {
   debateMessages: DebateMessage[];
   addDebateMessage: (msg: DebateMessage) => void;
   clearDebateMessages: () => void;
+  debateSession: DebateSessionState;
+  hydrateDebateSession: (payload: { topic: string; conversationId: string | null; messages: DebateMessage[] }) => void;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (v: boolean) => void;
   graphNodes: GraphNode[];
@@ -246,6 +253,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   addDebateMessage: (msg) =>
     set((s) => ({ debateMessages: [...s.debateMessages, msg] })),
   clearDebateMessages: () => set({ debateMessages: [] }),
+  debateSession: { topic: "", conversationId: null },
+  hydrateDebateSession: ({ topic, conversationId, messages }) =>
+    set({ debateSession: { topic, conversationId }, debateMessages: messages }),
   sidebarCollapsed: false,
   setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
   graphNodes: [],

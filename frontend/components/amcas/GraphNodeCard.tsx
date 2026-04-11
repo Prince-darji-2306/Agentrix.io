@@ -11,7 +11,7 @@ export type NodeStatus = "pending" | "running" | "completed" | "error";
 export type GraphNode = StoreGraphNode;
 
 const TYPE_BADGE: Record<NodeType, string> = {
-  orchestrator: "border-chart-1/40 text-chart-1",
+  deep_research: "border-chart-1/40 text-chart-1",
   agent:        "border-chart-1/30 text-chart-1",
   critic:       "border-chart-5/40 text-chart-5",
   output:       "border-chart-4/40 text-chart-4",

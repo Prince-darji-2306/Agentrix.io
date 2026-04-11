@@ -10,8 +10,8 @@ import { cn } from "@/lib/utils";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 
 export default function DebatePage() {
-  const { debateMessages, addDebateMessage, clearDebateMessages } = useAppStore();
-  const [topic, setTopic] = useState("");
+  const { debateMessages, addDebateMessage, clearDebateMessages, debateSession, hydrateDebateSession } = useAppStore();
+  const [topic, setTopic] = useState(debateSession.topic);
   const [rounds, setRounds] = useState(3);
   const [isDebating, setIsDebating] = useState(false);
   const [round, setRound] = useState(0);
@@ -24,12 +24,20 @@ export default function DebatePage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (debateSession.topic) {
+      setTopic(debateSession.topic);
+      setDebateConversationId(debateSession.conversationId);
+    }
+  }, [debateSession.topic, debateSession.conversationId]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [debateMessages]);
 
   const startDebate = async () => {
     if (!topic.trim() || isDebating) return;
     clearDebateMessages();
+    hydrateDebateSession({ topic, conversationId: debateConversationId, messages: [] });
     setIsDebating(true);
     setRound(0);
     setContradictions(0);
@@ -42,6 +50,7 @@ export default function DebatePage() {
 
         if ((msg as any).type === "conversation_id") {
           setDebateConversationId((msg as any).conversation_id);
+          hydrateDebateSession({ topic, conversationId: (msg as any).conversation_id, messages: [] });
         } else if (msg.type === "round") {
           setRound(msg.round ?? 0);
           setTotalRounds(msg.total_rounds ?? rounds);
@@ -80,7 +89,7 @@ export default function DebatePage() {
 
   const handleUserMessage = () => {
     if (!chatInput.trim()) return;
-    addDebateMessage({ id: nanoid(), role: "user", content: chatInput, timestamp: new Date() });
+    addDebateMessage({ id: nanoid(), role: "user", content: chatInput, timestamp: new Date(), conversationId: debateConversationId || undefined });
     setChatInput("");
     setTopic(chatInput);
   };

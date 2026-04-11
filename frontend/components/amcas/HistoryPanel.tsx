@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import {
   getHistory,
   getConversationMessages,
+  getDebateSession,
   renameConversation,
   deleteConversation,
   clearAllHistory,
@@ -14,7 +15,7 @@ import {
   DeepResearchPreThinking,
   CodeCompleteMarker,
 } from "@/lib/api";
-import { useAppStore, type ChatMessage as StoreChatMessage, type ChatMode } from "@/lib/store";
+import { useAppStore, type ChatMessage as StoreChatMessage, type ChatMode, type DebateMessage as StoreDebateMessage } from "@/lib/store";
 import { useAgentPanel, type AgentData, type CodeFile } from "./AgentPanelContext";
 import { X, MessageSquare, Clock, Trash2, Loader2, Edit2, Check, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -188,6 +189,7 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
   const [editTitle, setEditTitle] = useState("");
   const navigate = useNavigate();
   const { hydrateChatSession } = useAppStore();
+  const { hydrateDebateSession } = useAppStore();
   const { hydratePanelData } = useAgentPanel();
 
   useEffect(() => {
@@ -219,7 +221,50 @@ export default function HistoryPanel({ isOpen, onClose }: Readonly<HistoryPanelP
   const handleSelectConversation = async (conv: HistoryConversation) => {
     if (conv.type === "debate") {
       hydratePanelData({ agents: [], files: [], openPanel: false });
-      navigate("/debate");
+      try {
+        const session = await getDebateSession(conv.id);
+        if (session) {
+          const debateMessages: StoreDebateMessage[] = [];
+          for (const [roundIndex, round] of (session.debate_messages ?? []).entries()) {
+            if (round.proposer) {
+              debateMessages.push({
+                id: `${session.id}-proposer-${roundIndex}`,
+                role: "proposer" as const,
+                content: round.proposer,
+                round: roundIndex + 1,
+                timestamp: new Date(session.created_at ?? Date.now()),
+                conversationId: session.conversation_id,
+              });
+            }
+            if (round.critic) {
+              debateMessages.push({
+                id: `${session.id}-critic-${roundIndex}`,
+                role: "critic" as const,
+                content: round.critic,
+                round: roundIndex + 1,
+                timestamp: new Date(session.created_at ?? Date.now()),
+                conversationId: session.conversation_id,
+              });
+            }
+          }
+          if (session.verdict_text) {
+            debateMessages.push({
+              id: `${session.id}-verdict`,
+              role: "verifier" as const,
+              content: session.verdict_text,
+              timestamp: new Date(session.created_at ?? Date.now()),
+              conversationId: session.conversation_id,
+            });
+          }
+          hydrateDebateSession({
+            topic: session.topic,
+            conversationId: session.conversation_id,
+            messages: debateMessages,
+          });
+        }
+      } finally {
+        navigate("/debate");
+      }
     } else {
       try {
         const data =

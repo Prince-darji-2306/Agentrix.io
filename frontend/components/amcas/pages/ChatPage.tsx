@@ -63,7 +63,7 @@ export default function ChatPage() {
   // This keeps the bottom of the message visible as text is added
   useEffect(() => {
     if (isGenerating) {
-      bottomRef.current?.scrollIntoView({ behavior: "instant" });
+      bottomRef.current?.scrollIntoView({ behavior: "auto" });
     }
   }, [chatMessages, isGenerating]);
 
@@ -82,10 +82,10 @@ export default function ChatPage() {
     el.style.height = Math.min(el.scrollHeight, 128) + "px";
   }, [input]);
 
-  // Build graph data from orchestratorRaw result
-  const buildGraphFromOrchestrator = (
+  // Build graph data from deepResearchRaw result
+  const buildGraphFromDeepResearch = (
     task: string,
-    orchestratorRaw: {
+    deepResearchRaw: {
       subtasks: Array<{ id: number; description: string; agent_type: string; result: string }>;
       final_result: string;
       critic_confidence?: number;
@@ -95,13 +95,13 @@ export default function ChatPage() {
   ): { nodes: GraphNode[]; edges: GraphEdge[] } => {
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
-    const { subtasks, final_result, critic_confidence, critic_logical_consistency, critic_feedback } = orchestratorRaw;
+    const { subtasks, final_result, critic_confidence, critic_logical_consistency, critic_feedback } = deepResearchRaw;
 
-    // Orchestrator node (top center)
+    // Deep research node (top center)
     nodes.push({
-      id: "orchestrator",
-      type: "orchestrator",
-      label: "Orchestrator",
+      id: "deep_research",
+      type: "deep_research",
+      label: "Deep Research",
       description: `Task: "${task.substring(0, 80)}${task.length > 80 ? '...' : ''}"`,
       status: "completed",
       timeTaken: "-",
@@ -173,9 +173,9 @@ export default function ChatPage() {
     // Add researcher nodes to main list
     nodes.push(...researcherNodes);
 
-    // Edges: orchestrator -> each researcher (parallel)
+    // Edges: deep_research -> each researcher (parallel)
     researcherNodes.forEach((rn) => {
-      edges.push({ id: `edge-orch-res-${rn.id}`, from: "orchestrator", to: rn.id });
+      edges.push({ id: `edge-orch-res-${rn.id}`, from: "deep_research", to: rn.id });
     });
 
     // Edges: both researchers -> aggregator (gather)
@@ -303,7 +303,7 @@ export default function ChatPage() {
                 } else if (event.path === "standard") {
                   setGraphEdges(STANDARD_MODE_EDGES);
                 } else if (event.path === "deep_research") {
-                  // Deep research edges will be built from orchestratorRaw after completion
+                  // Deep research edges will be built from deepResearchRaw after completion
                   setGraphEdges([]);
                 }
               }
@@ -439,9 +439,9 @@ export default function ChatPage() {
             setConversationId(result.conversation_id);
           }
 
-          // For deep_research path, build graph from orchestratorRaw
-          if (result.orchestratorRaw && result.orchestratorRaw.subtasks) {
-            const { nodes, edges } = buildGraphFromOrchestrator(query, result.orchestratorRaw);
+          // For deep_research path, build graph from deepResearchRaw
+          if (result.deepResearchRaw && result.deepResearchRaw.subtasks) {
+            const { nodes, edges } = buildGraphFromDeepResearch(query, result.deepResearchRaw);
             setGraphNodes(nodes);
             setGraphEdges(edges);
           }
@@ -452,7 +452,7 @@ export default function ChatPage() {
             preThinking: result.preThinking,
           });
         } else {
-          // deep-research: use orchestrator with SSE streaming
+          // deep-research: use deep_research pipeline with SSE streaming
           setGraphNodes([]);
           setGraphEdges([]);
 
@@ -530,7 +530,7 @@ export default function ChatPage() {
                 updateChatMessage(assistantId, { content: uiContent });
               }
               else if (section === "answer") {
-                // Final answer content from orchestrator
+                // Final answer content from deep_research
                 finalReportContent = content;
                 const uiContent = JSON.stringify({
                   type: "deep_research_phase",
@@ -555,11 +555,11 @@ export default function ChatPage() {
             setConversationId(result.conversation_id);
           }
 
-          // Build graph from orchestrator data if available
-          if (result.orchestratorRaw) {
-            const { nodes, edges } = buildGraphFromOrchestrator(
+          // Build graph from deep_research data if available
+          if (result.deepResearchRaw) {
+            const { nodes, edges } = buildGraphFromDeepResearch(
               query,
-              result.orchestratorRaw
+              result.deepResearchRaw
             );
             setGraphNodes(nodes);
             setGraphEdges(edges);
