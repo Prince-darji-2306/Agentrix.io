@@ -87,10 +87,10 @@ async def run_deep_research_stream(
         # Inject prior conversation context into the task
         effective_task = task
         if memory_context:
-            print(f"[orchestrator_service:stream] Injecting memory context ({len(memory_context)} chars)")
+            print(f"[deep_research_service:stream] Injecting memory context ({len(memory_context)} chars)")
             effective_task = format_memory_block(memory_context) + task
         else:
-            print("[orchestrator_service:stream] No memory context — running orchestrator without history.")
+            print("[deep_research_service:stream] No memory context — running deep_research without history.")
 
         initial_state: OrchestratorState = {
             "original_task": effective_task,
@@ -107,9 +107,9 @@ async def run_deep_research_stream(
         # Use astream to get events as each node completes
         # LangGraph astream yields {node_name: state_update} dicts
         async for event in graph.astream(initial_state, stream_mode="updates"):
-            # event is a dict like {"orchestrator": {...}, "parallel_researchers": {...}, etc.}
+            # event is a dict like {"deep_research": {...}, "parallel_researchers": {...}, etc.}
             for node_name, node_output in event.items():
-                if node_name == "orchestrator":
+                if node_name == "deep_research":
                     # Subtasks created — emit plan event
                     subtasks = node_output.get("subtasks", [])
                     yield {
@@ -178,7 +178,7 @@ async def run_deep_research_stream(
                     }
 
     except Exception as e:
-        print(f"[orchestrator_service:stream] Error: {e}")
+        print(f"[deep_research_service:stream] Error: {e}")
         yield {"type": "error", "message": str(e)}
 
 
@@ -197,10 +197,10 @@ async def run_deep_research_stream_with_state(
         # Inject prior conversation context into the task
         effective_task = task
         if memory_context:
-            print(f"[orchestrator_service:stream] Injecting memory context ({len(memory_context)} chars)")
+            print(f"[deep_research_service:stream] Injecting memory context ({len(memory_context)} chars)")
             effective_task = format_memory_block(memory_context) + task
         else:
-            print("[orchestrator_service:stream] No memory context — running orchestrator without history.")
+            print("[deep_research_service:stream] No memory context — running deep_research without history.")
 
         initial_state: OrchestratorState = {
             "original_task": effective_task,
@@ -231,7 +231,7 @@ async def run_deep_research_stream_with_state(
             # Determine which node just completed by checking step_logs
             last_log = step_logs[-1] if step_logs else ""
 
-            if "Orchestrator" in last_log and ("created" in last_log or "decomposed" in last_log):
+            if "Deep Research" in last_log and ("created" in last_log or "decomposed" in last_log):
                 # Subtasks created — emit plan event
                 yield {
                     "type": "plan",
@@ -291,7 +291,7 @@ async def run_deep_research_stream_with_state(
                         "tools_used": [
                             st.get("agent_type", "") + "Agent" for st in subtasks
                         ],
-                        "orchestrator_raw": {
+                        "deep_research_raw": {
                             "subtasks": [
                                 {
                                     "id": st["id"],
@@ -310,5 +310,5 @@ async def run_deep_research_stream_with_state(
                 }
 
     except Exception as e:
-        print(f"[orchestrator_service:stream] Error: {e}")
+        print(f"[deep_research_service:stream] Error: {e}")
         yield {"type": "error", "message": str(e)}

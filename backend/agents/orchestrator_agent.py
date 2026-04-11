@@ -141,7 +141,7 @@ def _normalize_serious_mistakes(value: Any) -> list[dict]:
 
 # ─── Parallel Orchestrator (2 Researchers + Aggregator) ──────────────────────
 
-def orchestrator_node(state: OrchestratorState):
+def deep_research_node(state: OrchestratorState):
     """Analyzes the task and creates 2 researcher subtasks with different perspectives + 1 aggregator."""
     task = state["original_task"]
     llm = get_llm(temperature=0.3)
@@ -204,7 +204,7 @@ Respond in EXACTLY this JSON format (no markdown, no backticks):
         },
     ]
     logs = state.get("step_logs", [])
-    logs.append(f"🎯 Orchestrator decomposed task into {len(subtasks)} subtasks (2x researcher + aggregator)")
+    logs.append(f"🎯 Deep Research decomposed task into {len(subtasks)} subtasks (2x researcher + aggregator)")
     return {"subtasks": subtasks, "step_logs": logs}
 
 
@@ -398,15 +398,15 @@ async def critic_node(state: OrchestratorState):
 
 # ─── Build Graph ──────────────────────────────────────────────────────────────
 
-def _build_orchestrator_graph():
+def _build_deep_research_graph():
     graph = StateGraph(OrchestratorState)
-    graph.add_node("orchestrator", orchestrator_node)
+    graph.add_node("deep_research", deep_research_node)
     graph.add_node("parallel_researchers", parallel_researchers_node)
     graph.add_node("aggregator", aggregator_node)
     graph.add_node("critic", critic_node)
 
-    graph.set_entry_point("orchestrator")
-    graph.add_edge("orchestrator", "parallel_researchers")
+    graph.set_entry_point("deep_research")
+    graph.add_edge("deep_research", "parallel_researchers")
     graph.add_edge("parallel_researchers", "aggregator")
     graph.add_edge("aggregator", "critic")
     graph.add_edge("critic", END)
@@ -414,9 +414,9 @@ def _build_orchestrator_graph():
     return graph.compile()
 
 
-_orchestrator_graph = _build_orchestrator_graph()
+_deep_research_graph = _build_deep_research_graph()
 
 
-def  get_orchestrator_graph():
-    """Return the compiled orchestrator graph."""
-    return _orchestrator_graph
+def get_deep_research_graph():
+    """Return the compiled deep_research graph."""
+    return _deep_research_graph

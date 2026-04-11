@@ -9,6 +9,7 @@ from repositories.postgres_repo import (
     create_conversation,
     append_message,
     create_debate_session,
+    get_debate_session_by_conversation_id,
     get_user_history,
     update_conversation_timestamp,
     rename_conversation,

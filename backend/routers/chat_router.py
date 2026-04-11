@@ -15,7 +15,7 @@ from services import (
     run_tool_agent_stream_sse,
     smart_orchestrator_stream,
     get_conversation_memory_context_async,
-    run_orchestrator_stream_with_state,
+    run_deep_research_stream_with_state,
     _to_non_empty_text,
     add_to_memory
 )
@@ -33,83 +33,83 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["chat"])
 
 
-@router.post("/chat")
-async def agent_query(req: QueryRequest, user_id: str = Depends(get_current_user)):
-    """
-    Standard chat endpoint.
+# @router.post("/chat")
+# async def agent_query(req: QueryRequest, user_id: str = Depends(get_current_user)):
+#     """
+#     Standard chat endpoint.
 
-    Flow:
-    1. run_tool_agent  → answers the query; chunks retrieved are buffered internally
-    2. append_message  → persists the turn to DB, returns the real messages.id
-    3. log_chunk_retrieval → writes each buffered chunk with the correct message_id FK
-    """
-    try:
-        # ── Fetch prior conversation memory (if this is a continuing conversation) ─
-        memory_context: str | None = None
-        if req.conversation_id:
-            print(f"[chat_router] Fetching memory for conv_id={req.conversation_id}")
-            memory_context = await get_conversation_memory_context_async(
-                req.conversation_id, user_id
-            )
-            if memory_context:
-                print(
-                    f"[chat_router] Memory context ready: {len(memory_context)} chars"
-                )
-            else:
-                print(
-                    f"[chat_router] No prior memory found for conv_id={req.conversation_id}"
-                )
+#     Flow:
+#     1. run_tool_agent  → answers the query; chunks retrieved are buffered internally
+#     2. append_message  → persists the turn to DB, returns the real messages.id
+#     3. log_chunk_retrieval → writes each buffered chunk with the correct message_id FK
+#     """
+#     try:
+#         # ── Fetch prior conversation memory (if this is a continuing conversation) ─
+#         memory_context: str | None = None
+#         if req.conversation_id:
+#             print(f"[chat_router] Fetching memory for conv_id={req.conversation_id}")
+#             memory_context = await get_conversation_memory_context_async(
+#                 req.conversation_id, user_id
+#             )
+#             if memory_context:
+#                 print(
+#                     f"[chat_router] Memory context ready: {len(memory_context)} chars"
+#                 )
+#             else:
+#                 print(
+#                     f"[chat_router] No prior memory found for conv_id={req.conversation_id}"
+#                 )
 
-        # ── Run tool agent with optional memory context ─────────────────────
-        result = await run_tool_agent(
-            req.query, user_id=user_id, pdfs=req.pdfs, memory_context=memory_context
-        )
+#         # ── Run tool agent with optional memory context ─────────────────────
+#         result = await run_tool_agent(
+#             req.query, user_id=user_id, pdfs=req.pdfs, memory_context=memory_context
+#         )
 
-        # ── Step 3 & 4: Persist message, then log chunks with real message_id ──
-        try:
-            conv_id = req.conversation_id
-            if not conv_id:
-                conv_id = await create_conversation(
-                    user_id, "standard", req.query[:200]
-                )
+#         # ── Step 3 & 4: Persist message, then log chunks with real message_id ──
+#         try:
+#             conv_id = req.conversation_id
+#             if not conv_id:
+#                 conv_id = await create_conversation(
+#                     user_id, "standard", req.query[:200]
+#                 )
 
-            # append_message returns the UUID of the newly inserted messages row
-            message_id = await append_message(
-                conversation_id=conv_id,
-                reasoning_mode="standard",
-                user_content=req.query,
-                assistant_content=result.get("answer", ""),
-                pdfs=req.pdfs,
-            )
-            await update_conversation_timestamp(conv_id)
+#             # append_message returns the UUID of the newly inserted messages row
+#             message_id = await append_message(
+#                 conversation_id=conv_id,
+#                 reasoning_mode="standard",
+#                 user_content=req.query,
+#                 assistant_content=result.get("answer", ""),
+#                 pdfs=req.pdfs,
+#             )
+#             await update_conversation_timestamp(conv_id)
 
-            # Log every retrieved chunk with the real messages.id FK
-            for chunk in result.get("retrieved_chunks", []):
-                try:
-                    await log_chunk_retrieval(
-                        message_id=message_id,
-                        qdrant_chunk_id=chunk.get("id", ""),
-                        pdf_id=chunk.get("pdf_id", ""),
-                        similarity_score=chunk.get("similarity_score", 0.0),
-                        quality_score=None,
-                    )
-                except Exception as log_err:
-                    print(
-                        f"[chat_router] Chunk log failed for {chunk.get('id')}: {log_err}"
-                    )
+#             # Log every retrieved chunk with the real messages.id FK
+#             for chunk in result.get("retrieved_chunks", []):
+#                 try:
+#                     await log_chunk_retrieval(
+#                         message_id=message_id,
+#                         qdrant_chunk_id=chunk.get("id", ""),
+#                         pdf_id=chunk.get("pdf_id", ""),
+#                         similarity_score=chunk.get("similarity_score", 0.0),
+#                         quality_score=None,
+#                     )
+#                 except Exception as log_err:
+#                     print(
+#                         f"[chat_router] Chunk log failed for {chunk.get('id')}: {log_err}"
+#                     )
 
-        except Exception as db_err:
-            print(f"[chat_router] DB persist error: {db_err}")
-            conv_id = req.conversation_id  # best effort
+#         except Exception as db_err:
+#             print(f"[chat_router] DB persist error: {db_err}")
+#             conv_id = req.conversation_id  # best effort
 
-        # ── Update window memory ─────────────────────────────
-        if conv_id:
-            add_to_memory(conv_id, req.query, result.get("answer", ""))
+#         # ── Update window memory ─────────────────────────────
+#         if conv_id:
+#             add_to_memory(conv_id, req.query, result.get("answer", ""))
 
-        return {"result": result, "conversation_id": conv_id}
-    except Exception as e:
-        logger.error(f"[chat_router] /chat error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+#         return {"result": result, "conversation_id": conv_id}
+#     except Exception as e:
+#         logger.error(f"[chat_router] /chat error: {e}", exc_info=True)
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/chat/stream")
@@ -236,8 +236,8 @@ async def agent_query_stream(
     )
 
 
-@router.post("/orchestrator/task")
-async def orchestrator_task(req: TaskRequest, user_id: str = Depends(get_current_user)):
+@router.post("/deep_research/task")
+async def deep_research_task(req: TaskRequest, user_id: str = Depends(get_current_user)):
     """Run the multi-agent orchestrator (deep research) with SSE streaming."""
 
     async def event_generator():
@@ -254,7 +254,7 @@ async def orchestrator_task(req: TaskRequest, user_id: str = Depends(get_current
                 memory_context = await get_conversation_memory_context_async(req.conversation_id, user_id)
 
             # Stream orchestrator events
-            async for event in run_orchestrator_stream_with_state(req.task, memory_context=memory_context):
+            async for event in run_deep_research_stream_with_state(req.task, memory_context=memory_context):
                 event_type = event.get("type", "")
 
                 # Forward all events to frontend
@@ -277,7 +277,7 @@ async def orchestrator_task(req: TaskRequest, user_id: str = Depends(get_current
                         aggregation_content = content
 
         except Exception as e:
-            logger.error(f"[orchestrator_router] Streaming error: {e}", exc_info=True)
+            logger.error(f"[deep_research_router] Streaming error: {e}", exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
         # Persist to DB after streaming completes
@@ -287,14 +287,14 @@ async def orchestrator_task(req: TaskRequest, user_id: str = Depends(get_current
 
             raw_conf = final_meta.get("confidence_score")
             raw_cons = final_meta.get("logical_consistency")
-            orchestrator_raw = final_meta.get("orchestrator_raw", {})
+            deep_research_raw = final_meta.get("deep_research_raw", {})
             tools = final_meta.get("tools_used", [])
 
             assistant_content_to_store = (
                 _to_non_empty_text(final_result)
                 or (
-                    _to_non_empty_text(orchestrator_raw.get("final_result", ""))
-                    if isinstance(orchestrator_raw, dict)
+                    _to_non_empty_text(deep_research_raw.get("final_result", ""))
+                    if isinstance(deep_research_raw, dict)
                     else ""
                 )
                 or _to_non_empty_text(aggregation_content)
@@ -326,7 +326,7 @@ async def orchestrator_task(req: TaskRequest, user_id: str = Depends(get_current
                 add_to_memory(conv_id, req.task, assistant_content_to_store)
 
         except Exception as db_err:
-            logger.error(f"[orchestrator_router] DB persist error: {db_err}", exc_info=True)
+            logger.error(f"[deep_research_router] DB persist error: {db_err}", exc_info=True)
 
         yield 'data: {"type": "done"}\n\n'
 

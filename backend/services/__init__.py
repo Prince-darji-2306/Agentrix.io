@@ -3,9 +3,9 @@ from services.agent_service import (
     run_tool_agent,
     run_tool_agent_stream_sse
 )
-from services.orchestrator_service import (
-    run_orchestrator,
-    run_orchestrator_stream_with_state,
+from services.deep_research_service import (
+    run_deep_research,
+    run_deep_research_stream_with_state,
     _to_non_empty_text
 )
 from services.debate_service import (

@@ -15,7 +15,7 @@ from agents import (
     get_node_coords,
 )
 from services.agent_service import run_tool_agent_stream_sse
-from services.orchestrator_service import run_orchestrator_stream_with_state
+from services.deep_research_service import run_deep_research_stream_with_state
 from services.memory_service import get_conversation_memory_context_async, format_memory_block
 from schemas.schema import CodingAgentState
 
@@ -178,7 +178,7 @@ async def smart_orchestrator_stream(
                     "node_id": "router",
                     "status": "completed",
                     "label": router,
-                    "node_type": "orchestrator",
+                    "node_type": "deep_research",
                     "x": coords["router"]["x"],
                     "y": coords["router"]["y"],
                     "output": f"Routed to: deep_research (Reason: {reason})",
@@ -188,12 +188,12 @@ async def smart_orchestrator_stream(
             yield yield_event(
                 {
                     "type": "node_update",
-                    "node_id": "orchestrator",
+                    "node_id": "deep_research",
                     "status": "running",
-                    "label": "Orchestrator",
-                    "node_type": "orchestrator",
-                    "x": coords["orchestrator"]["x"],
-                    "y": coords["orchestrator"]["y"],
+                    "label": "Deep Research",
+                    "node_type": "deep_research",
+                    "x": coords["deep_research"]["x"],
+                    "y": coords["deep_research"]["y"],
                     "output": None,
                 }
             )
@@ -205,9 +205,9 @@ async def smart_orchestrator_stream(
             # Use streaming orchestrator for real-time phase updates
             final_result = ""
             final_meta = {}
-            orchestrator_raw = {}
+            deep_research_raw = {}
 
-            async for orch_event in run_orchestrator_stream_with_state(
+            async for orch_event in run_deep_research_stream_with_state(
                 task, memory_context=memory_context
             ):
                 event_type = orch_event.get("type", "")
@@ -218,12 +218,12 @@ async def smart_orchestrator_stream(
                     yield yield_event(
                         {
                             "type": "node_update",
-                            "node_id": "orchestrator",
+                            "node_id": "deep_research",
                             "status": "completed",
-                            "label": "Orchestrator",
-                            "node_type": "orchestrator",
-                            "x": coords["orchestrator"]["x"],
-                            "y": coords["orchestrator"]["y"],
+                            "label": "Deep Research",
+                            "node_type": "deep_research",
+                            "x": coords["deep_research"]["x"],
+                            "y": coords["deep_research"]["y"],
                             "output": f"Created {len(subtasks)} subtasks",
                         }
                     )
@@ -295,7 +295,7 @@ async def smart_orchestrator_stream(
                     # Critic completed — capture final result
                     final_result = orch_event.get("result", "")
                     final_meta = orch_event.get("meta", {})
-                    orchestrator_raw = final_meta.get("orchestrator_raw", {})
+                    deep_research_raw = final_meta.get("deep_research_raw", {})
 
                     # Emit critic and output node updates
                     yield yield_event(

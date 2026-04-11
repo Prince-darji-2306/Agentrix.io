@@ -10,6 +10,7 @@ from services import (
 from repositories import (
     create_conversation,
     create_debate_session,
+    get_debate_session_by_conversation_id,
     update_conversation_timestamp
 )
 
@@ -55,3 +56,12 @@ async def debate_stream(topic: str, rounds: int = 3, user_id: str = Depends(get_
         yield "data: {\"type\": \"done\"}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.get("/debate/session/{conversation_id}")
+async def get_debate_session(conversation_id: str, user_id: str = Depends(get_current_user)):
+    """Return a saved debate session for history replay."""
+    session = await get_debate_session_by_conversation_id(conversation_id, user_id)
+    if not session:
+        return {"session": None}
+    return {"session": session}

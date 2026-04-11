@@ -306,6 +306,28 @@ async def create_debate_session(
         return str(row["id"])
 
 
+async def get_debate_session_by_conversation_id(conversation_id: str, user_id: str) -> dict | None:
+    """Fetch a debate session by its conversation UUID for the authenticated user."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT id, user_id, conversation_id, topic, debate_messages, verdict_text, created_at
+            FROM debate_sessions
+            WHERE conversation_id = $1 AND user_id = $2
+            """,
+            uuid.UUID(conversation_id),
+            uuid.UUID(user_id),
+        )
+        if not row:
+            return None
+
+        data = dict(row)
+        if isinstance(data.get("debate_messages"), str):
+            data["debate_messages"] = _json.loads(data["debate_messages"])
+        return data
+
+
 async def get_user_history(user_id: str) -> list[dict]:
     """Get conversation metadata for a user, ordered by most recent."""
     pool = await get_pool()
