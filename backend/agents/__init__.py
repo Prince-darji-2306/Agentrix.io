@@ -16,7 +16,11 @@ from agents.orchestrator_agent import (
 from agents.debate_agent import (
     get_agent_a_persona,
     get_agent_b_persona,
+    get_verifier_persona,
     get_debate_model,
+    create_proposer_agent,
+    create_critic_agent,
+    create_verifier_agent,
 )
 from agents.coding_agent import (
     code_planner_node,
