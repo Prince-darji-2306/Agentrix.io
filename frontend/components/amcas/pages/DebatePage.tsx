@@ -22,7 +22,21 @@ export default function DebatePage() {
   const [chatInput, setChatInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [debateConversationId, setLocalConvId] = useState<string | null>(null);
+  const [showRoundsMenu, setShowRoundsMenu] = useState(false);
+  const [showModeMenu, setShowModeMenu] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const selectRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (selectRef.current && !selectRef.current.contains(event.target as Node)) {
+        setShowRoundsMenu(false);
+        setShowModeMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (debateSession.topic) {
@@ -148,56 +162,97 @@ export default function DebatePage() {
 
       <div className="flex-1 overflow-hidden flex flex-col gap-3 p-4">
         {/* Topic input */}
-        <div className="flex gap-2 shrink-0">
-          <div className="flex-1 flex items-center border border-border bg-card">
-            <span className="text-primary text-xs font-mono px-3 border-r border-border shrink-0">TOPIC</span>
+        {/* Input container with custom styled selectors */}
+        <div ref={selectRef} className="flex gap-2 shrink-0">
+          <div className="flex-1 flex items-center border border-border bg-card focus-within:border-primary/40 transition-colors">
+            <span className="text-primary text-xs font-mono px-3 border-r border-border shrink-0 uppercase tracking-widest">Topic</span>
             <input
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && startDebate()}
               placeholder="Enter a proposition to debate…"
               disabled={isDebating}
-              className="flex-1 bg-transparent px-3 py-2.5 text-xs font-mono text-foreground placeholder:text-muted-foreground/50 outline-none"
+              className="flex-1 bg-transparent px-3 py-2.5 text-xs font-mono text-foreground placeholder:text-muted-foreground/40 outline-none"
             />
           </div>
-          {/* Rounds selector */}
-          <div className="flex items-center border border-border bg-card">
-            <span className="text-muted-foreground text-[9px] font-mono px-2 border-r border-border shrink-0 uppercase tracking-widest">RND</span>
-            <select
-              value={rounds}
-              onChange={(e) => setRounds(Number(e.target.value))}
+
+          {/* Styled Mode Selector */}
+          <div className="relative flex items-center border border-border bg-card">
+            <span className="text-muted-foreground text-[9px] font-mono px-2 border-r border-border shrink-0 uppercase tracking-widest">Mode</span>
+            <button
+              onClick={() => !isDebating && setShowModeMenu(!showModeMenu)}
               disabled={isDebating}
-              className="bg-transparent px-2 py-2.5 text-xs font-mono text-foreground outline-none cursor-pointer"
+              className="flex items-center gap-2 px-3 py-2.5 text-xs font-mono text-foreground hover:bg-secondary/50 transition-colors cursor-pointer disabled:opacity-50"
             >
-              {[2, 3, 4, 5].map((n) => (
-                <option key={n} value={n}>{n}</option>
-              ))}
-            </select>
+              <span className="text-primary text-[10px]">&gt;</span>
+              {mode === "autogen" ? "AutoGen" : "Raw"}
+            </button>
+            {showModeMenu && (
+              <div className="absolute top-full right-0 mt-1 w-32 bg-popover border border-border shadow-lg z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+                {[
+                  { id: "autogen", label: "AutoGen" },
+                  { id: "raw", label: "Raw" },
+                ].map((m) => (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setMode(m.id as any);
+                      setShowModeMenu(false);
+                    }}
+                    className={cn(
+                      "w-full text-left px-3 py-2 text-[10px] font-mono transition-colors last:border-0 border-b border-border/40",
+                      mode === m.id ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    )}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          {/* Mode selector */}
-          <div className="flex items-center border border-border bg-card">
-            <span className="text-muted-foreground text-[9px] font-mono px-2 border-r border-border shrink-0 uppercase tracking-widest">MODE</span>
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value as "autogen" | "raw")}
+
+          {/* Styled Rounds Selector */}
+          <div className="relative flex items-center border border-border bg-card">
+            <span className="text-muted-foreground text-[9px] font-mono px-2 border-r border-border shrink-0 uppercase tracking-widest">Rnd</span>
+            <button
+              onClick={() => !isDebating && setShowRoundsMenu(!showRoundsMenu)}
               disabled={isDebating}
-              className="bg-transparent px-2 py-2.5 text-xs font-mono text-foreground outline-none cursor-pointer"
+              className="flex items-center gap-2 px-3 py-2.5 text-xs font-mono text-foreground hover:bg-secondary/50 transition-colors cursor-pointer disabled:opacity-50"
             >
-              <option value="autogen">AutoGen</option>
-              <option value="raw">Raw</option>
-            </select>
+              <span className="text-chart-2 text-[10px]">{rounds.toString().padStart(2, '0')}</span>
+            </button>
+            {showRoundsMenu && (
+              <div className="absolute top-full right-0 mt-1 w-24 bg-popover border border-border shadow-lg z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+                {[2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => {
+                      setRounds(n);
+                      setShowRoundsMenu(false);
+                    }}
+                    className={cn(
+                      "w-full text-center px-3 py-2 text-[10px] font-mono transition-colors last:border-0 border-b border-border/40",
+                      rounds === n ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    )}
+                  >
+                    {n} Rounds
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+
           <button
             onClick={startDebate}
             disabled={!topic.trim() || isDebating}
             className={cn(
-              "px-4 py-2.5 text-[10px] font-mono tracking-widest uppercase border transition-all duration-150 flex items-center gap-2",
+              "px-5 py-2.5 text-[10px] font-mono tracking-widest uppercase border transition-all duration-150 flex items-center gap-2",
               topic.trim() && !isDebating
-                ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+                ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 hover:border-primary/60"
                 : "border-border bg-secondary text-muted-foreground cursor-not-allowed"
             )}
           >
-            <Swords className="w-3 h-3" />
+            <Swords className="w-3.5 h-3.5" />
             Initiate
           </button>
         </div>
