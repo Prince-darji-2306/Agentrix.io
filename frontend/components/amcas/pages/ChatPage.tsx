@@ -129,49 +129,47 @@ export default function ChatPage() {
     // Aggregator node (below parallel researchers)
     const aggregatorNode = subtasks.find((st) => st.agent_type === "aggregator");
     if (aggregatorNode) {
-      nodes.push({
-        id: "aggregator",
-        type: "agent",
-        label: "Aggregator",
-        description: aggregatorNode.description,
-        status: "completed",
-        timeTaken: "-",
-        output: aggregatorNode.result,
-        x: 400,
-        y: 320,
-      });
-
-      // Critic node (evaluates aggregator output)
-      nodes.push({
-        id: "critic",
-        type: "critic",
-        label: "Critic",
-        description: `Confidence: ${critic_confidence ?? 85}% | Consistency: ${critic_logical_consistency ?? 85}%`,
-        status: "completed",
-        timeTaken: "-",
-        output: critic_feedback
-          ? `Confidence: ${critic_confidence}%\nLogical Consistency: ${critic_logical_consistency}%\nFeedback: ${critic_feedback}`
-          : `Confidence: ${critic_confidence ?? 85}%\nLogical Consistency: ${critic_logical_consistency ?? 85}%`,
-        x: 400,
-        y: 400,
-      });
-
-      // Output node (final result)
-      nodes.push({
-        id: "output",
-        type: "output",
-        label: "Final Report",
-        description: "7-section structured output",
-        status: "completed",
-        timeTaken: "-",
-        output: final_result,
-        x: 400,
-        y: 480,
-      });
+      nodes.push(
+        {
+          id: "aggregator",
+          type: "agent",
+          label: "Aggregator",
+          description: aggregatorNode.description,
+          status: "completed",
+          timeTaken: "-",
+          output: aggregatorNode.result,
+          x: 400,
+          y: 320,
+        },
+        {
+          id: "critic",
+          type: "critic",
+          label: "Critic",
+          description: `Confidence: ${critic_confidence ?? 85}% | Consistency: ${critic_logical_consistency ?? 85}%`,
+          status: "completed",
+          timeTaken: "-",
+          output: critic_feedback
+            ? `Confidence: ${critic_confidence}%\nLogical Consistency: ${critic_logical_consistency}%\nFeedback: ${critic_feedback}`
+            : `Confidence: ${critic_confidence ?? 85}%\nLogical Consistency: ${critic_logical_consistency ?? 85}%`,
+          x: 400,
+          y: 400,
+        },
+        {
+          id: "output",
+          type: "output",
+          label: "Final Report",
+          description: "7-section structured output",
+          status: "completed",
+          timeTaken: "-",
+          output: final_result,
+          x: 400,
+          y: 480,
+        },
+        ...researcherNodes
+      );
+    } else {
+      nodes.push(...researcherNodes);
     }
-
-    // Add researcher nodes to main list
-    nodes.push(...researcherNodes);
 
     // Edges: deep_research -> each researcher (parallel)
     researcherNodes.forEach((rn) => {
@@ -180,13 +178,15 @@ export default function ChatPage() {
 
     // Edges: both researchers -> aggregator (gather)
     if (aggregatorNode) {
+      const newEdges = [];
       researcherNodes.forEach((rn) => {
-        edges.push({ id: `edge-res-aggregator-${rn.id}`, from: rn.id, to: "aggregator" });
+        newEdges.push({ id: `edge-res-aggregator-${rn.id}`, from: rn.id, to: "aggregator" });
       });
       // Edge: aggregator -> critic
-      edges.push({ id: "edge-aggregator-critic", from: "aggregator", to: "critic" });
+      newEdges.push({ id: "edge-aggregator-critic", from: "aggregator", to: "critic" });
       // Edge: critic -> output
-      edges.push({ id: "edge-critic-output", from: "critic", to: "output" });
+      newEdges.push({ id: "edge-critic-output", from: "critic", to: "output" });
+      edges.push(...newEdges);
     }
 
     return { nodes, edges };
