@@ -781,9 +781,10 @@ export async function callDeepResearchApi(
 export async function* streamDebate(
   topic: string,
   rounds: number = 3,
-  conversationId?: string | null
+  conversationId?: string | null,
+  mode: string = "autogen"
 ): AsyncGenerator<DebateMessage> {
-  let url = `${API_BASE}/debate/stream?topic=${encodeURIComponent(topic)}&rounds=${rounds}`;
+  let url = `${API_BASE}/debate/stream?topic=${encodeURIComponent(topic)}&rounds=${rounds}&mode=${encodeURIComponent(mode)}`;
   // if (conversationId) url += `&conversation_id=${encodeURIComponent(conversationId)}`;
 
   const res = await fetch(url, {

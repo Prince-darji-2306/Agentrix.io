@@ -10,9 +10,10 @@ import { cn } from "@/lib/utils";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 
 export default function DebatePage() {
-  const { debateMessages, addDebateMessage, clearDebateMessages, debateSession, hydrateDebateSession } = useAppStore();
+  const { debateMessages, addDebateMessage, clearDebateMessages, debateSession, hydrateDebateSession, setDebateConversationId } = useAppStore();
   const [topic, setTopic] = useState(debateSession.topic);
   const [rounds, setRounds] = useState(3);
+  const [mode, setMode] = useState<"autogen" | "raw">("autogen");
   const [isDebating, setIsDebating] = useState(false);
   const [round, setRound] = useState(0);
   const [totalRounds, setTotalRounds] = useState(3);
@@ -20,13 +21,13 @@ export default function DebatePage() {
   const [resolution, setResolution] = useState<"pending" | "ongoing" | "resolved">("pending");
   const [chatInput, setChatInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [debateConversationId, setDebateConversationId] = useState<string | null>(null);
+  const [debateConversationId, setLocalConvId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (debateSession.topic) {
       setTopic(debateSession.topic);
-      setDebateConversationId(debateSession.conversationId);
+      setLocalConvId(debateSession.conversationId);
     }
   }, [debateSession.topic, debateSession.conversationId]);
 
@@ -45,12 +46,13 @@ export default function DebatePage() {
     setError(null);
 
     try {
-      for await (const msg of streamDebate(topic, rounds, debateConversationId)) {
+      for await (const msg of streamDebate(topic, rounds, debateConversationId, mode)) {
         if (msg.type === "done") break;
 
         if ((msg as any).type === "conversation_id") {
-          setDebateConversationId((msg as any).conversation_id);
-          hydrateDebateSession({ topic, conversationId: (msg as any).conversation_id, messages: [] });
+          const newId = (msg as any).conversation_id;
+          setLocalConvId(newId);
+          setDebateConversationId(newId);
         } else if (msg.type === "round") {
           setRound(msg.round ?? 0);
           setTotalRounds(msg.total_rounds ?? rounds);
@@ -106,7 +108,7 @@ export default function DebatePage() {
             <Swords className="w-3.5 h-3.5 text-primary" />
             <span className="text-xs font-mono tracking-widest text-foreground uppercase">Debate Arena</span>
             <span className="text-[9px] font-mono tracking-widest text-muted-foreground/50 uppercase hidden sm:block">
-              / AutoGen multi-agent structured debate
+              / {mode === "autogen" ? "AutoGen multi-agent structured debate" : "Raw Groq API debate"}
             </span>
           </div>
           {/* Stats */}
@@ -170,6 +172,19 @@ export default function DebatePage() {
               {[2, 3, 4, 5].map((n) => (
                 <option key={n} value={n}>{n}</option>
               ))}
+            </select>
+          </div>
+          {/* Mode selector */}
+          <div className="flex items-center border border-border bg-card">
+            <span className="text-muted-foreground text-[9px] font-mono px-2 border-r border-border shrink-0 uppercase tracking-widest">MODE</span>
+            <select
+              value={mode}
+              onChange={(e) => setMode(e.target.value as "autogen" | "raw")}
+              disabled={isDebating}
+              className="bg-transparent px-2 py-2.5 text-xs font-mono text-foreground outline-none cursor-pointer"
+            >
+              <option value="autogen">AutoGen</option>
+              <option value="raw">Raw</option>
             </select>
           </div>
           <button

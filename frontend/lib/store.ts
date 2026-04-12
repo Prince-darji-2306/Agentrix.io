@@ -121,6 +121,7 @@ interface AppState {
   clearDebateMessages: () => void;
   debateSession: DebateSessionState;
   hydrateDebateSession: (payload: { topic: string; conversationId: string | null; messages: DebateMessage[] }) => void;
+  setDebateConversationId: (id: string | null) => void;
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (v: boolean) => void;
   graphNodes: GraphNode[];
@@ -256,6 +257,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   debateSession: { topic: "", conversationId: null },
   hydrateDebateSession: ({ topic, conversationId, messages }) =>
     set({ debateSession: { topic, conversationId }, debateMessages: messages }),
+  setDebateConversationId: (id) =>
+    set((state) => ({ debateSession: { ...state.debateSession, conversationId: id } })),
   sidebarCollapsed: false,
   setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
   graphNodes: [],
