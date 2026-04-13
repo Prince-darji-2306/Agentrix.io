@@ -3,26 +3,24 @@ import asyncio
 import re
 from typing import Any, Callable
 from core.llm_engine import get_llm
+from core.config import AgentConfig
 from schemas.schema import CodingAgentState, CodingSubtask
 from langchain_core.messages import HumanMessage, SystemMessage
-
-_SCORE_MIN = 0
-_SCORE_MAX = 100
-_VALID_SEVERITIES = {"low", "medium", "high", "critical"}
+from utils.json_helpers import (
+    sanitize_fenced_json,
+    extract_first_json_object,
+    load_json_object,
+    clamp_score,
+    normalize_text,
+    normalize_errors,
+    normalize_serious_mistakes,
+)
+from utils.graph_nodes import get_coding_node_coords
 
 
 # ─── Node Coordinates (for frontend graph) ────────────────────────────────────
 
-NODE_COORDS = {
-    "router":          {"x": 400, "y": 60},
-    "code_planner":    {"x": 400, "y": 160},
-    "coder_1":         {"x": 180, "y": 280},
-    "coder_2":         {"x": 400, "y": 280},
-    "coder_3":         {"x": 620, "y": 280},
-    "code_aggregator": {"x": 400, "y": 400},
-    "code_reviewer":   {"x": 400, "y": 480},
-    "output":          {"x": 400, "y": 560},
-}
+NODE_COORDS = get_coding_node_coords()
 
 
 def get_node_coords() -> dict:
@@ -30,149 +28,11 @@ def get_node_coords() -> dict:
     return NODE_COORDS
 
 
-def _sanitize_fenced_json(raw_text: str) -> str:
-    text = raw_text.strip()
-    if not text:
-        return text
-
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if lines:
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-
-    if text.lower().startswith("json\n"):
-        text = text[5:].strip()
-
-    return text
-
-
-def _extract_first_json_object(text: str) -> str:
-    start = -1
-    depth = 0
-    in_string = False
-    escape_next = False
-
-    for idx, char in enumerate(text):
-        if in_string:
-            if escape_next:
-                escape_next = False
-            elif char == "\\":
-                escape_next = True
-            elif char == '"':
-                in_string = False
-            continue
-
-        if char == '"':
-            in_string = True
-            continue
-
-        if char == "{":
-            if depth == 0:
-                start = idx
-            depth += 1
-            continue
-
-        if char == "}" and depth > 0:
-            depth -= 1
-            if depth == 0 and start != -1:
-                return text[start : idx + 1]
-
-    return ""
-
-
-def _load_json_object(raw_text: str) -> dict[str, Any]:
-    sanitized = _sanitize_fenced_json(raw_text)
-    candidates = [sanitized]
-
-    extracted = _extract_first_json_object(sanitized)
-    if extracted and extracted not in candidates:
-        candidates.append(extracted)
-
-    last_error: Exception | None = None
-    for candidate in candidates:
-        if not candidate:
-            continue
-        try:
-            parsed = json.loads(candidate)
-        except json.JSONDecodeError as exc:
-            last_error = exc
-            continue
-        if not isinstance(parsed, dict):
-            raise ValueError("Reviewer response JSON root must be an object.")
-        return parsed
-
-    raise ValueError(f"Unable to parse reviewer JSON response: {last_error}")
-
-
-def _normalize_text(value: Any) -> str:
-    if value is None:
-        return ""
-    return value.strip() if isinstance(value, str) else str(value).strip()
-
-
-def _clamp_score(value: Any, default: int) -> int:
-    try:
-        numeric = int(round(float(value)))
-    except (TypeError, ValueError):
-        numeric = default
-    return max(_SCORE_MIN, min(_SCORE_MAX, numeric))
-
-
-def _normalize_errors(value: Any) -> list[str]:
-    if isinstance(value, str):
-        value = [value]
-    if not isinstance(value, list):
-        return []
-
-    normalized: list[str] = []
-    for item in value:
-        item_text = _normalize_text(item)
-        if item_text:
-            normalized.append(item_text)
-    return normalized
-
-
-def _normalize_serious_mistakes(value: Any) -> list[dict]:
-    if not isinstance(value, list):
-        return []
-
-    normalized: list[dict] = []
-    for item in value:
-        if isinstance(item, str):
-            description = item.strip()
-            if description:
-                normalized.append({"severity": "high", "description": description})
-            continue
-        if not isinstance(item, dict):
-            continue
-
-        description = _normalize_text(item.get("description"))
-        if not description:
-            continue
-
-        severity = _normalize_text(item.get("severity")).lower() or "high"
-        if severity not in _VALID_SEVERITIES:
-            severity = "high"
-
-        normalized_item = {"severity": severity, "description": description}
-
-        action = _normalize_text(item.get("action"))
-        if action:
-            normalized_item["action"] = action
-
-        normalized.append(normalized_item)
-
-    return normalized
-
-
 # ─── Code Planner Node ───────────────────────────────────────────────────────
 
 async def code_planner_node(state: CodingAgentState) -> dict:
     """Decomposes the task into coding subtasks with shared interface."""
-    llm = get_llm(temperature=0.1, instant= True)
+    llm = get_llm(temperature=AgentConfig.CodingAgent.PLANNER_TEMPERATURE, instant=True)
     task = state["original_task"]
 
     prompt = f"""You are a senior software architect. Given the following coding task, break it into multiple independent subtasks that can be implemented in parallel.
@@ -259,7 +119,7 @@ async def parallel_coders_node(state: CodingAgentState) -> dict:
     original_task = state["original_task"]
 
     async def run_coder(subtask: CodingSubtask, coder_idx: int) -> str:
-        llm = get_llm(temperature=0.2, change=False)
+        llm = get_llm(temperature=AgentConfig.CodingAgent.CODER_TEMPERATURE, change=False)
         signatures_text = "\n".join(subtask.get("signatures", []))
 
         prompt = f"""You are Coding Agent {coder_idx + 1}. You are part of a team implementing: {original_task}
@@ -312,7 +172,7 @@ async def parallel_coders_node(state: CodingAgentState) -> dict:
 
 async def code_aggregator_node(state: CodingAgentState) -> dict:
     """Merges 3 coder outputs into one coherent codebase."""
-    llm = get_llm(temperature=0.1, change=True)
+    llm = get_llm(temperature=AgentConfig.CodingAgent.AGGREGATOR_TEMPERATURE, change=True)
     coder_results = state["coder_results"]
     shared_contract = state["shared_contract"]
     original_task = state["original_task"]
@@ -365,7 +225,7 @@ async def code_aggregator_node(state: CodingAgentState) -> dict:
 
 async def code_reviewer_node(state: CodingAgentState) -> dict:
     """Reviews merged code for correctness and returns scores + errors."""
-    llm = get_llm(temperature=0.0, change=True)
+    llm = get_llm(temperature=AgentConfig.CodingAgent.REVIEWER_TEMPERATURE, change=True)
     merged_code = state["merged_code"]
     original_task = state["original_task"]
     retry_count = state.get("retry_count", 0)
@@ -417,24 +277,24 @@ async def code_reviewer_node(state: CodingAgentState) -> dict:
     parse_error = ""
     parsed: dict[str, Any] = {}
     try:
-        parsed = _load_json_object(response.content if isinstance(response.content, str) else str(response.content))
+        parsed = load_json_object(response.content if isinstance(response.content, str) else str(response.content))
     except ValueError as exc:
         parse_error = str(exc)
 
     confidence_default = 25 if parse_error else 70
     consistency_default = 25 if parse_error else 70
-    confidence = _clamp_score(parsed.get("confidence"), default=confidence_default)
-    consistency = _clamp_score(
+    confidence = clamp_score(parsed.get("confidence"), default=confidence_default)
+    consistency = clamp_score(
         parsed.get("consistency", parsed.get("logical_consistency", parsed.get("consistency_score"))),
         default=consistency_default,
     )
-    errors = _normalize_errors(parsed.get("errors", parsed.get("review_errors", [])))
+    errors = normalize_errors(parsed.get("errors", parsed.get("review_errors", [])))
     if parse_error and not errors:
         errors = [
             "Reviewer output was not valid JSON. Re-run merge/review and verify every requirement explicitly."
         ]
 
-    feedback = _normalize_text(parsed.get("friendly_feedback", parsed.get("critic_feedback")))
+    feedback = normalize_text(parsed.get("friendly_feedback", parsed.get("critic_feedback")))
     if not feedback:
         feedback = (
             "Reviewer output failed strict JSON validation; a conservative failure response was applied."
@@ -442,7 +302,7 @@ async def code_reviewer_node(state: CodingAgentState) -> dict:
             else "Review complete. Address blockers and rerun the reviewer."
         )
 
-    serious_mistakes = _normalize_serious_mistakes(parsed.get("serious_mistakes", []))
+    serious_mistakes = normalize_serious_mistakes(parsed.get("serious_mistakes", []))
     if parse_error and not serious_mistakes:
         serious_mistakes = [
             {

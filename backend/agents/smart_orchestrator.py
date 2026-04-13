@@ -1,23 +1,13 @@
 from core.llm_engine import get_llm
+from core.config import AgentConfig
 from langchain_core.messages import HumanMessage, SystemMessage
+from utils.graph_nodes import get_standard_node_coords, get_deep_research_node_coords
 
 
 # ─── Node Coordinates for Standard & Deep Research Paths ──────────────────────
 
-STANDARD_NODE_COORDS = {
-    "router": {"x": 400, "y": 60},
-    "output": {"x": 400, "y": 200},
-}
-
-DEEP_RESEARCH_NODE_COORDS = {
-    "router":              {"x": 400, "y": 60},
-    "orchestrator":        {"x": 400, "y": 160},
-    "researcher_1":        {"x": 240, "y": 280},
-    "researcher_2":        {"x": 560, "y": 280},
-    "aggregator":          {"x": 400, "y": 400},
-    "critic":              {"x": 400, "y": 480},
-    "output":              {"x": 400, "y": 560},
-}
+STANDARD_NODE_COORDS = get_standard_node_coords()
+DEEP_RESEARCH_NODE_COORDS = get_deep_research_node_coords()
 
 
 def get_standard_node_coords() -> dict:
@@ -34,7 +24,7 @@ def get_deep_research_node_coords() -> dict:
 
 async def classify_query(task: str) -> tuple[str, str, str]:
     """Classify the task into one of three paths and return problem understanding for code tasks."""
-    llm = get_llm(temperature=0.0, instant=True)
+    llm = get_llm(temperature=AgentConfig.SmartOrchestrator.ROUTER_TEMPERATURE, instant=True)
 
     prompt = f"""You are a query router. Classify the following user query into exactly one category.
 

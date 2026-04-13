@@ -2,141 +2,18 @@ import asyncio
 import json
 from typing import Any
 from core.llm_engine import get_llm
+from core.config import AgentConfig
 from schemas.schema import OrchestratorState
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import StateGraph, END
-
-_SCORE_MIN = 0
-_SCORE_MAX = 100
-_VALID_SEVERITIES = {"low", "medium", "high", "critical"}
-
-
-def _sanitize_fenced_json(raw_text: str) -> str:
-    text = raw_text.strip()
-    if not text:
-        return text
-
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if lines:
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
-
-    if text.lower().startswith("json\n"):
-        text = text[5:].strip()
-
-    return text
-
-
-def _extract_first_json_object(text: str) -> str:
-    start = -1
-    depth = 0
-    in_string = False
-    escape_next = False
-
-    for idx, char in enumerate(text):
-        if in_string:
-            if escape_next:
-                escape_next = False
-            elif char == "\\":
-                escape_next = True
-            elif char == '"':
-                in_string = False
-            continue
-
-        if char == '"':
-            in_string = True
-            continue
-
-        if char == "{":
-            if depth == 0:
-                start = idx
-            depth += 1
-            continue
-
-        if char == "}" and depth > 0:
-            depth -= 1
-            if depth == 0 and start != -1:
-                return text[start : idx + 1]
-
-    return ""
-
-
-def _load_json_object(raw_text: str) -> dict[str, Any]:
-    sanitized = _sanitize_fenced_json(raw_text)
-    candidates = [sanitized]
-
-    extracted = _extract_first_json_object(sanitized)
-    if extracted and extracted not in candidates:
-        candidates.append(extracted)
-
-    last_error: Exception | None = None
-    for candidate in candidates:
-        if not candidate:
-            continue
-        try:
-            parsed = json.loads(candidate)
-        except json.JSONDecodeError as exc:
-            last_error = exc
-            continue
-        if not isinstance(parsed, dict):
-            raise ValueError("Critic response JSON root must be an object.")
-        return parsed
-
-    raise ValueError(f"Unable to parse critic JSON response: {last_error}")
-
-
-def _clamp_score(value: Any, default: int) -> int:
-    try:
-        numeric = int(round(float(value)))
-    except (TypeError, ValueError):
-        numeric = default
-    return max(_SCORE_MIN, min(_SCORE_MAX, numeric))
-
-
-def _normalize_text(value: Any) -> str:
-    if value is None:
-        return ""
-    return value.strip() if isinstance(value, str) else str(value).strip()
-
-
-def _normalize_serious_mistakes(value: Any) -> list[dict]:
-    if not isinstance(value, list):
-        return []
-
-    normalized: list[dict] = []
-    for item in value:
-        if isinstance(item, str):
-            description = item.strip()
-            if description:
-                normalized.append({"severity": "high", "description": description})
-            continue
-        if not isinstance(item, dict):
-            continue
-
-        description = _normalize_text(item.get("description"))
-        if not description:
-            continue
-
-        severity = _normalize_text(item.get("severity")).lower() or "high"
-        if severity not in _VALID_SEVERITIES:
-            severity = "high"
-
-        normalized_item = {"severity": severity, "description": description}
-
-        action = _normalize_text(item.get("action"))
-        if action:
-            normalized_item["action"] = action
-
-        impact = _normalize_text(item.get("impact"))
-        if impact:
-            normalized_item["impact"] = impact
-
-        normalized.append(normalized_item)
-
-    return normalized
+from utils.json_helpers import (
+    sanitize_fenced_json,
+    extract_first_json_object,
+    load_json_object,
+    clamp_score,
+    normalize_text,
+    normalize_serious_mistakes,
+)
 
 
 # ─── Parallel Orchestrator (2 Researchers + Aggregator) ──────────────────────
@@ -144,7 +21,7 @@ def _normalize_serious_mistakes(value: Any) -> list[dict]:
 def deep_research_node(state: OrchestratorState):
     """Analyzes the task and creates 2 researcher subtasks with different perspectives + 1 aggregator."""
     task = state["original_task"]
-    llm = get_llm(temperature=0.3)
+    llm = get_llm(temperature=AgentConfig.OrchestratorAgent.DECOMPOSER_TEMPERATURE)
 
     prompt = f"""You are a task decomposer. Your job is to analyze the given task and break it into exactly 2 research assignments with different perspectives, plus 1 aggregation task.
 
@@ -218,7 +95,7 @@ async def parallel_researchers_node(state: OrchestratorState):
     original_task = state["original_task"]
 
     async def run_researcher(description: str) -> str:
-        llm = get_llm(temperature=0.7)
+        llm = get_llm(temperature=AgentConfig.OrchestratorAgent.RESEARCHER_TEMPERATURE)
         prompt = f"""Original task: {original_task}
 
         Your research assignment: {description}
@@ -259,7 +136,7 @@ async def aggregator_node(state: OrchestratorState):
         f"--- Researcher {i+1} ---\n{res}" for i, res in enumerate(researcher_results)
     )
 
-    llm = get_llm(temperature=0.2, change=True)
+    llm = get_llm(temperature=AgentConfig.OrchestratorAgent.AGGREGATOR_TEMPERATURE, change=True)
     prompt = f"""You are a professional research writer. Synthesize the following research findings into a comprehensive, structured final report.
 
             Original Task: {state['original_task']}
@@ -310,7 +187,7 @@ async def critic_node(state: OrchestratorState):
     logs = list(state.get("step_logs", []))
     final_result = state["final_result"]
 
-    llm = get_llm(temperature=0.0, change=True)
+    llm = get_llm(temperature=AgentConfig.OrchestratorAgent.CRITIC_TEMPERATURE, change=True)
     prompt = f"""You are a strict research quality critic.
 
             Evaluate the report against the task and produce one JSON object only.
@@ -358,26 +235,26 @@ async def critic_node(state: OrchestratorState):
     parse_error = ""
     parsed: dict[str, Any] = {}
     try:
-        parsed = _load_json_object(response.content if isinstance(response.content, str) else str(response.content))
+        parsed = load_json_object(response.content if isinstance(response.content, str) else str(response.content))
     except ValueError as exc:
         parse_error = str(exc)
         logs.append(f"⚠️ Critic parsing error: {parse_error}")
 
     confidence_default = 30 if parse_error else 70
     consistency_default = 30 if parse_error else 70
-    confidence = _clamp_score(parsed.get("confidence"), default=confidence_default)
-    consistency = _clamp_score(
+    confidence = clamp_score(parsed.get("confidence"), default=confidence_default)
+    consistency = clamp_score(
         parsed.get("consistency", parsed.get("logical_consistency", parsed.get("consistency_score"))),
         default=consistency_default,
     )
-    feedback = _normalize_text(parsed.get("friendly_feedback", parsed.get("critic_feedback")))
+    feedback = normalize_text(parsed.get("friendly_feedback", parsed.get("critic_feedback")))
     if not feedback:
         feedback = (
             "Critic output failed strict JSON validation. Re-run evaluation with strict format compliance."
             if parse_error
             else "Review complete. Address highlighted weaknesses to improve confidence and consistency."
         )
-    serious_mistakes = _normalize_serious_mistakes(parsed.get("serious_mistakes", []))
+    serious_mistakes = normalize_serious_mistakes(parsed.get("serious_mistakes", []))
     if parse_error and not serious_mistakes:
         serious_mistakes = [
             {
