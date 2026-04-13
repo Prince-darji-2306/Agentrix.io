@@ -1,4 +1,3 @@
-import asyncio
 import math
 import datetime
 from langchain_core.tools import tool
@@ -76,7 +75,7 @@ def knowledge_retriever(query: str, pdf_id: str = "", mode: str = "all") -> str:
 @tool
 def get_current_datetime(timezone: str = "UTC") -> str:
     """Get the current date and time. Use when user asks about current time or date."""
-    now = datetime.datetime.utcnow()
+    now = datetime.datetime.now(datetime.timezone.utc)
     return f"Current UTC datetime: {now.strftime('%Y-%m-%d %H:%M:%S')}"
 
 

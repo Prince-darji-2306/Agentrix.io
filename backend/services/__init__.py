@@ -10,6 +10,8 @@ from services.deep_research_service import (
 )
 from services.debate_service import (
     run_debate_stream,
+    run_debate_stream_raw,
+    run_debate_stream_autogen,
     structure_debate_rounds
 )
 from services.smart_orchestrator_service import (
@@ -25,3 +27,4 @@ from services.memory_service import (
     clear_conversation_memory,
     get_all_conversations
 )
+

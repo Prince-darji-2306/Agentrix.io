@@ -18,18 +18,23 @@ router = APIRouter(tags=["debate"])
 
 
 @router.get("/debate/stream")
-async def debate_stream(topic: str, rounds: int = 3, user_id: str = Depends(get_current_user)):
+async def debate_stream(
+    topic: str,
+    rounds: int = 3,
+    mode: str = "autogen",
+    user_id: str = Depends(get_current_user)
+):
     """Stream a debate between two agents via SSE."""
     debate_events = []
 
     async def event_generator():
         nonlocal debate_events
-        async for msg in run_debate_stream(topic, rounds):
-            debate_events.append(msg)
-            yield f"data: {json.dumps(msg)}\n\n"
-
-        # Persist debate session after all rounds complete
         try:
+            async for msg in run_debate_stream(topic, rounds, mode):
+                debate_events.append(msg)
+                yield f"data: {json.dumps(msg)}\n\n"
+
+            # Persist debate session after all rounds complete
             conv_id = await create_conversation(user_id, "debate", topic[:200])
             
             structured_rounds = structure_debate_rounds(debate_events)
@@ -50,6 +55,8 @@ async def debate_stream(topic: str, rounds: int = 3, user_id: str = Depends(get_
             
             # Emit conversation_id for this debate session
             yield f"data: {json.dumps({'type': 'conversation_id', 'conversation_id': conv_id})}\n\n"
+        except ValueError as ve:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(ve)})}\n\n"
         except Exception as db_err:
             print(f"[debate_router] DB persist error: {db_err}")
 
