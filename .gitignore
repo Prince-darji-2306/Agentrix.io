@@ -2,6 +2,7 @@ backend/.env
 backend/__pycache__
 backend/schemas/__pycache__
 backend/utils/__pycache__
+backend/tests/__pycache__
 backend/chroma_storage
 backend/agents/__pycache__
 backend/agent_manager/__pycache__
