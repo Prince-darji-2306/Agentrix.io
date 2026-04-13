@@ -41,7 +41,7 @@ const MarkdownComponents: any = {
   h1: ({ node, ...props }: any) => <h1 className="text-sm font-mono font-bold text-foreground uppercase tracking-widest mt-4 mb-2" {...props} />,
   h2: ({ node, ...props }: any) => <h2 className="text-xs font-mono font-bold text-foreground uppercase tracking-widest mt-4 mb-2 border-b border-border pb-1" {...props} />,
   h3: ({ node, ...props }: any) => <h3 className="text-[11px] font-mono font-semibold text-primary mt-3 mb-1" {...props} />,
-  p: ({ node, ...props }: any) => <p className="leading-relaxed my-1.5 text-muted-foreground" {...props} />,
+  p: ({ node, ...props }: any) => <div className="leading-relaxed my-1.5 text-muted-foreground" {...props} />,
   code: ({ node, inline, className, children, ...props }: any) => {
     if (inline) return <code className="bg-secondary/50 border border-border/50 px-1.5 py-0.5 text-[11px] font-mono rounded" {...props}>{children}</code>;
     return <CodeBlock className={className}>{children}</CodeBlock>;

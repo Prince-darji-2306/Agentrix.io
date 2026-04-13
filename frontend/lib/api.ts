@@ -1,4 +1,5 @@
 import { ChatMode } from "./store";
+import { getAuthHeadersCached, invalidateAuthCache } from "./auth-cache";
 
 const env = import.meta.env as Record<string, string | undefined>;
 const API_BASE =
@@ -9,12 +10,7 @@ const API_BASE =
 // ─── Auth Headers ─────────────────────────────────────────────────────────────
 
 export function getAuthHeaders(): HeadersInit {
-  const token = localStorage.getItem("agentrix_token");
-  const headers: HeadersInit = { "Content-Type": "application/json" };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-  return headers;
+  return getAuthHeadersCached();
 }
 
 // ─── Auth API ─────────────────────────────────────────────────────────────────
@@ -35,6 +31,7 @@ export async function register(email: string, password: string, display_name: st
     const error = await res.json().catch(() => ({ detail: "Registration failed" }));
     throw new Error(error.detail || "Registration failed");
   }
+  invalidateAuthCache();
   return res.json();
 }
 
@@ -48,6 +45,7 @@ export async function login(email: string, password: string): Promise<AuthRespon
     const error = await res.json().catch(() => ({ detail: "Login failed" }));
     throw new Error(error.detail || "Login failed");
   }
+  invalidateAuthCache();
   return res.json();
 }
 
@@ -597,34 +595,24 @@ export async function* callChatApiStream(
   if (conversationId) body.conversation_id = conversationId;
   if (pdfs) body.pdfs = pdfs;
 
-  console.log("[DEBUG] /chat/stream request body:", JSON.stringify(body));
-
   const res = await fetch(`${API_BASE}/chat/stream`, {
     method: "POST",
     headers: getAuthHeaders(),
     body: JSON.stringify(body),
   });
 
-  console.log("[DEBUG] /chat/stream response status:", res.status);
-  console.log("[DEBUG] /chat/stream response headers:", Object.fromEntries(res.headers.entries()));
-
   if (!res.ok || !res.body) {
     const error = await res.text();
-    console.error("[DEBUG] /chat/stream error response body:", error);
     throw new Error(`Chat stream error: ${res.status} - ${error}`);
   }
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let eventCount = 0;
-  const allEvents: ChatStreamEvent[] = [];
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) {
-      console.log("[DEBUG] /chat/stream reading done. Total events received:", eventCount);
-      console.log("[DEBUG] /chat/stream all received events:", JSON.stringify(allEvents, null, 2));
       break;
     }
 
@@ -638,15 +626,11 @@ export async function* callChatApiStream(
         if (!jsonStr) continue;
         try {
           const msg: ChatStreamEvent = JSON.parse(jsonStr);
-          eventCount++;
-          allEvents.push(msg);
-          console.log(`[DEBUG] /chat/stream event #${eventCount} (type: ${msg.type}):`, JSON.stringify(msg));
           yield msg;
           // NOTE: Do NOT return early on "done" — the backend sends more events
           // after the agent's "done" (like conversation_id). Let the stream
           // close naturally when reader.read() returns done=true.
-        } catch (e) {
-          console.warn("[DEBUG] /chat/stream failed to parse event:", e, "Raw line:", line);
+        } catch {
           // skip malformed lines
         }
       }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useAppStore } from "@/lib/store";
 import { useAgentPanel } from "../AgentPanelContext";
 import { generateResponse, type SmartSSEEvent } from "@/lib/api";
@@ -10,27 +10,12 @@ import { Send, Square, Terminal, AlertCircle, X, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { nanoid } from "@/lib/nanoid";
 import type { GraphNode, GraphEdge, GraphNodeType } from "@/lib/store";
+import { GRAPH_TOPOLOGIES } from "@/lib/graph-config";
 
 const SUGGESTIONS = [
   "Explain multi-agent reasoning architectures",
   "What is task decomposition in AI planning?",
   "How does deep research mode differ from standard?",
-];
-
-const CODE_MODE_EDGES: GraphEdge[] = [
-  { id: "e-router-planner", from: "router", to: "code_planner" },
-  { id: "e-planner-coder1", from: "code_planner", to: "coder_1" },
-  { id: "e-planner-coder2", from: "code_planner", to: "coder_2" },
-  { id: "e-planner-coder3", from: "code_planner", to: "coder_3" },
-  { id: "e-coder1-aggregator", from: "coder_1", to: "code_aggregator" },
-  { id: "e-coder2-aggregator", from: "coder_2", to: "code_aggregator" },
-  { id: "e-coder3-aggregator", from: "coder_3", to: "code_aggregator" },
-  { id: "e-aggregator-reviewer", from: "code_aggregator", to: "code_reviewer" },
-  { id: "e-reviewer-output", from: "code_reviewer", to: "output" },
-];
-
-const STANDARD_MODE_EDGES: GraphEdge[] = [
-  { id: "e-router-output", from: "router", to: "output" },
 ];
 
 export default function ChatPage() {
@@ -59,17 +44,15 @@ export default function ChatPage() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // During streaming: use instant scroll to stay in sync with growing content (no jitter)
-  // This keeps the bottom of the message visible as text is added
+  // Memoize graph edges to prevent unnecessary re-renders
+  const codeEdges = useMemo(() => GRAPH_TOPOLOGIES.CODE_MODE_EDGES, []);
+  const standardEdges = useMemo(() => GRAPH_TOPOLOGIES.STANDARD_MODE_EDGES, []);
+
+  // Combined scroll effect: during generation use auto (no jitter), on complete use smooth
   useEffect(() => {
     if (isGenerating) {
       bottomRef.current?.scrollIntoView({ behavior: "auto" });
-    }
-  }, [chatMessages, isGenerating]);
-
-  // When generation completes: smooth scroll to bottom for a nice finish
-  useEffect(() => {
-    if (!isGenerating && chatMessages.length > 0) {
+    } else if (chatMessages.length > 0) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [isGenerating, chatMessages.length]);
@@ -299,9 +282,9 @@ export default function ChatPage() {
               if (event.type === "route") {
                 detectedPath = event.path || "";
                 if (event.path === "code") {
-                  setGraphEdges(CODE_MODE_EDGES);
+                  setGraphEdges(codeEdges);
                 } else if (event.path === "standard") {
-                  setGraphEdges(STANDARD_MODE_EDGES);
+                  setGraphEdges(standardEdges);
                 } else if (event.path === "deep_research") {
                   // Deep research edges will be built from deepResearchRaw after completion
                   setGraphEdges([]);

@@ -7,9 +7,16 @@ import type { GraphNode } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { GitFork, Info } from "lucide-react";
 
-type NodeType = "orchestrator" | "agent" | "critic" | "output" | "planner" | "coder" | "aggregator" | "reviewer";
+type NodeType = "deep_research" | "orchestrator" | "agent" | "critic" | "output" | "planner" | "coder" | "aggregator" | "reviewer";
 
 const TYPE_COLORS: Record<NodeType, { fillAlpha: string; strokeAlpha: string; colorVar: string; label: string; badge: string }> = {
+  deep_research: {
+    fillAlpha: "0.12",
+    strokeAlpha: "0.55",
+    colorVar: "var(--chart-1)",
+    label: "Deep Research",
+    badge: "border-chart-1/40 text-chart-1 bg-chart-1/8",
+  },
   orchestrator: {
     fillAlpha: "0.12",
     strokeAlpha: "0.55",
@@ -68,7 +75,7 @@ const TYPE_COLORS: Record<NodeType, { fillAlpha: string; strokeAlpha: string; co
   },
 };
 
-const LEGEND_TYPES: NodeType[] = ["orchestrator", "agent", "critic", "output", "planner", "coder", "aggregator", "reviewer"];
+const LEGEND_TYPES: NodeType[] = ["deep_research", "orchestrator", "agent", "critic", "output", "planner", "coder", "aggregator", "reviewer"];
 
 export default function TaskGraphPage() {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -148,7 +155,7 @@ export default function TaskGraphPage() {
               {graphNodes.map((node) => {
                 const isSelected = selectedNode?.id === node.id;
                 const type = node.type as NodeType;
-                const colors = TYPE_COLORS[type];
+                const colors = TYPE_COLORS[type] || TYPE_COLORS.agent;
                 const colorVar = colors.colorVar;
 
                 const getStatusColor = () => {

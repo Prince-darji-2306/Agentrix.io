@@ -129,8 +129,8 @@ function CodeCompleteCard({ data }: { data: CodeCompleteData }) {
         <span className="text-[11px] font-mono text-chart-2 uppercase tracking-widest">Code generation complete</span>
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {data.filenames.map((f) => (
-          <span key={f} className="flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/25 text-[10px] font-mono text-primary">
+        {data.filenames.map((f, index) => (
+          <span key={`${f}-${index}`} className="flex items-center gap-1 px-2 py-1 bg-primary/10 border border-primary/25 text-[10px] font-mono text-primary">
             <Code2 className="w-2.5 h-2.5" />
             {f}
           </span>
@@ -581,7 +581,7 @@ const MarkdownComponents: any = {
   td: ({ node, ...props }: any) => <td className="px-2 py-1 border-b border-border/30" {...props} />,
 };
 
-export default function ChatMessage({ message }: ChatMessageProps) {
+export default React.memo(function ChatMessage({ message }: ChatMessageProps) {
   const [metaOpen, setMetaOpen] = useState(false);
   const isAssistant = message.role === "assistant";
   const modeInfo = (message.mode ? MODE_LABELS[message.mode] : MODE_LABELS.standard) || MODE_LABELS.standard;
@@ -769,11 +769,11 @@ export default function ChatMessage({ message }: ChatMessageProps) {
                   <div className="flex items-start gap-1.5 pt-2.5 border-t border-border">
                     <Wrench className="w-3 h-3 text-muted-foreground mt-0.5 shrink-0" />
                     <div className="flex flex-wrap gap-1">
-                      {message.meta.toolsUsed.map((t) => (
-                        <span key={t} className="text-[9px] font-mono px-1.5 py-0.5 bg-secondary border border-border text-muted-foreground uppercase tracking-wide">
-                          {t}
-                        </span>
-                      ))}
+                {Array.from(new Set(message.meta.toolsUsed)).map((t, index) => (
+                          <span key={`${t}-${index}`} className="text-[9px] font-mono px-1.5 py-0.5 bg-secondary border border-border text-muted-foreground uppercase tracking-wide">
+                            {t}
+                          </span>
+                        ))}
                     </div>
                   </div>
                 )}
@@ -793,4 +793,10 @@ export default function ChatMessage({ message }: ChatMessageProps) {
       </div>
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom equality check: only re-render if message ID or content changed
+  return prevProps.message.id === nextProps.message.id &&
+         prevProps.message.content === nextProps.message.content &&
+         JSON.stringify(prevProps.message.meta) === JSON.stringify(nextProps.message.meta) &&
+         prevProps.message.processingIndicator === nextProps.message.processingIndicator;
+});

@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import { nanoid } from "@/lib/nanoid";
+import { storageManager } from "./storage-manager";
 
 export type ChatMode = "standard" | "multi-agent" | "deep-research";
 
@@ -196,7 +197,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         };
         const updatedSessions = [...s.chatSessions, newSession];
         try {
-          localStorage.setItem("agentrix_chat_history", JSON.stringify(updatedSessions));
+          storageManager.write("agentrix_chat_history", updatedSessions);
         } catch (e) {
           console.warn("Failed to persist new chat session:", e);
         }
@@ -216,7 +217,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             : session
         );
         try {
-          localStorage.setItem("agentrix_chat_history", JSON.stringify(updatedSessions));
+          storageManager.write("agentrix_chat_history", updatedSessions);
         } catch (e) {
           console.warn("Failed to persist chat history on addChatMessage:", e);
         }
@@ -235,7 +236,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             : session
         );
         try {
-          localStorage.setItem("agentrix_chat_history", JSON.stringify(updatedSessions));
+          storageManager.write("agentrix_chat_history", updatedSessions);
         } catch (e) {
           console.warn("Failed to persist chat history on updateChatMessage:", e);
         }
@@ -293,7 +294,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const updated = [...chatSessions, newSession];
     set({ chatSessions: updated, currentChatId: id, chatMessages: [], conversationId: null });
     try {
-      localStorage.setItem("agentrix_chat_history", JSON.stringify(updated));
+      storageManager.write("agentrix_chat_history", updated);
     } catch (e) {
       console.warn("Failed to create new chat:", e);
     }
@@ -323,7 +324,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           ? state.chatSessions.map((session, index) => (index === existingIndex ? newSession : session))
           : [...state.chatSessions, newSession];
       try {
-        localStorage.setItem("agentrix_chat_history", JSON.stringify(updatedSessions));
+        storageManager.write("agentrix_chat_history", updatedSessions);
       } catch (e) {
         console.warn("Failed to persist history replay session:", e);
       }
@@ -340,7 +341,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((state) => {
       const updated = state.chatSessions.filter((s) => s.id !== id);
       try {
-        localStorage.setItem("agentrix_chat_history", JSON.stringify(updated));
+        storageManager.write("agentrix_chat_history", updated);
       } catch (e) {
         console.warn("Failed to delete chat from localStorage:", e);
       }
@@ -372,7 +373,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         s.id === id ? { ...s, ...updates, updatedAt: new Date() } : s
       );
       try {
-        localStorage.setItem("agentrix_chat_history", JSON.stringify(updated));
+        storageManager.write("agentrix_chat_history", updated);
       } catch (e) {
         console.warn("Failed to update chat in localStorage:", e);
       }
@@ -400,7 +401,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           : session
       );
       try {
-        localStorage.setItem("agentrix_chat_history", JSON.stringify(updatedSessions));
+        storageManager.write("agentrix_chat_history", updatedSessions);
       } catch (e) {
         console.warn("Failed to persist conversation ID to chat session:", e);
       }
