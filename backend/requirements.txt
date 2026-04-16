@@ -1,0 +1,21 @@
+fastapi
+uvicorn
+asyncpg
+python-jose[cryptography]
+bcrypt
+python-multipart
+qdrant-client
+pymupdf
+langchain-textsplitters
+langchain-core
+langchain-groq
+langchain-openai
+groq
+python-dotenv
+autogen-agentchat~=0.4.0.dev10
+autogen-ext[openai]~=0.4.0.dev10
+httpx
+sentence-transformers
+langgraph
+# Install CPU-only torch to keep the image size manageable
+torch --index-url https://download.pytorch.org/whl/cpu
