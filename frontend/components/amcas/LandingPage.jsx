@@ -1908,10 +1908,14 @@ export default function Landing({ onEnterApp }) {
                 >
                   &gt;_ Initialize Session
                 </button>
-                <button style={S.secondaryBtn}
+                <button 
+                  style={S.secondaryBtn}
+                  onClick={() => document.getElementById("how-it-works")?.scrollIntoView({ behavior: "smooth" })}
                   onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(200,136,42,0.4)"; }}
                   onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--border)"; }}
-                ><>View Architecture <ArrowRight size={14} /></></button>
+                >
+                  <>View Architecture <ArrowRight size={14} /></>
+                </button>
               </div>
             </RevealSection>
 
@@ -2102,7 +2106,7 @@ export default function Landing({ onEnterApp }) {
 
 
         {/* === HOW OUR AI THINKS AND BUILDS === */}
-        <section style={{ ...S.section, borderTop: "1px solid var(--border)" }}>
+        <section id="how-it-works" style={{ ...S.section, borderTop: "1px solid var(--border)" }}>
           <RevealSection>
             <div style={S.sectionHeader}>
               <div style={S.divider} />
