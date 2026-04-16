@@ -1,21 +1,23 @@
-fastapi
-uvicorn
-asyncpg
-python-jose[cryptography]
-bcrypt
-python-multipart
-qdrant-client
-pymupdf
-langchain-textsplitters
-langchain-core
-langchain-groq
-langchain-openai
-groq
-python-dotenv
-autogen-agentchat~=0.4.0.dev10
-autogen-ext[openai]~=0.4.0.dev10
-httpx
-sentence-transformers
-langgraph
-# Install CPU-only torch to keep the image size manageable
-torch --index-url https://download.pytorch.org/whl/cpu
+fastapi==0.128.2
+uvicorn==0.44.0
+asyncpg==0.31.0
+python-jose==3.5.0
+bcrypt==5.0.0
+python-multipart==0.0.26
+qdrant-client==1.16.2
+PyMuPDF==1.26.4
+langchain-text-splitters==0.3.10
+langchain==0.3.27
+langchain-core==0.3.79
+langchain-groq==0.3.7
+langchain-openai==0.3.7
+groq==0.31.0
+python-dotenv==1.2.2
+autogen-agentchat==0.4.2
+autogen-ext==0.4.2
+autogen-core==0.4.2
+httpx==0.28.1
+sentence-transformers==4.1.0
+langgraph==0.2.20
+# Install CPU-only torch for the container
+torch==2.10.0 --index-url https://download.pytorch.org/whl/cpu
