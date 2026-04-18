@@ -152,6 +152,3 @@ npm run build
 - **Live Demo:** [https://agentrix-io.vercel.app/](https://agentrix-io.vercel.app/)
 - **GitHub:** [https://github.com/Prince-darji-2306/Agentrix.io](https://github.com/Prince-darji-2306/Agentrix.io)
 
----
-
-MIT License
