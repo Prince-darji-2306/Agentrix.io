@@ -10,12 +10,6 @@ backend/services/__pycache__
 backend/core/__pycache__
 backend/repositories/__pycache__
 backend/routers/__pycache__
-CLAUDE.md
-temp.py
-temp2.py
-test_chroma.py
-stream
 README_detail.md
-CLAUDE.md
 backend/delete.py
 backend/test_db_connection.py
