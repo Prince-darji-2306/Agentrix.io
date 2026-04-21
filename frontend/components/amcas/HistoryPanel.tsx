@@ -105,12 +105,45 @@ function buildCodeCompleteMarker(preThinking: CodePreThinking): CodeCompleteMark
   };
 }
 
+function extractCodeSectionsFromText(assistantText: string): { problemUnderstanding: string; approach: string } {
+  const normalized = assistantText.replace(/\r\n/g, "\n").trim();
+  if (!normalized) {
+    return { problemUnderstanding: "", approach: "" };
+  }
+
+  const problemLabel = "Problem Understanding:";
+  const approachLabel = "Approach:";
+  const problemIndex = normalized.toLowerCase().indexOf(problemLabel.toLowerCase());
+  const approachIndex = normalized.toLowerCase().indexOf(approachLabel.toLowerCase());
+
+  if (problemIndex === -1 && approachIndex === -1) {
+    return { problemUnderstanding: "", approach: "" };
+  }
+
+  const problemStart = problemIndex >= 0 ? problemIndex + problemLabel.length : -1;
+  const approachStart = approachIndex >= 0 ? approachIndex + approachLabel.length : -1;
+
+  const problemUnderstanding =
+    problemStart >= 0
+      ? normalized
+          .slice(problemStart, approachIndex >= 0 && approachIndex > problemStart ? approachIndex : normalized.length)
+          .trim()
+      : "";
+  const approach =
+    approachStart >= 0
+      ? normalized.slice(approachStart).trim()
+      : "";
+
+  return { problemUnderstanding, approach };
+}
+
 function buildCodeHistoryContent(
   assistantText: string,
   preThinking: CodePreThinking
 ): string {
-  const problemUnderstanding = preThinking.problem_understanding?.trim() ?? "";
-  const approach = preThinking.approach?.trim() ?? "";
+  const textSections = extractCodeSectionsFromText(assistantText);
+  const problemUnderstanding = preThinking.problem_understanding?.trim() ?? textSections.problemUnderstanding;
+  const approach = preThinking.approach?.trim() ?? textSections.approach;
 
   if (problemUnderstanding || approach) {
     return JSON.stringify({
